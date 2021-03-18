@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from abc import ABC
+from abc import abstractmethod, ABC
 
-from ..base import Base
+from ..base import Base, Property
+
 
 class SensorManager(Base, ABC):
     """The sensor manager base class.
@@ -55,4 +56,4 @@ class DiscreteSensorManager(SensorManager, ABC):
     sensors. Potentisl actions are unique and their order is not important.
 
     """
-    action_set : set = Property(doc="")
+    action_set: set = Property(doc="The set of actions available to the sensor(s)")
