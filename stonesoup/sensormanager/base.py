@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from abc import abstractmethod, ABC
+from random import sample, shuffle
 
 from ..base import Base, Property
 
@@ -50,10 +51,55 @@ class SensorManager(Base, ABC):
         raise NotImplementedError
 
 
-class DiscreteSensorManager(SensorManager, ABC):
-    """A sensor msnager in which the actions comprise a discrete collaction of objects. It is
+class DiscreteSensorManager(SensorManager):
+    """A sensor manager in which the actions comprise a discrete collaction of objects. It is
     presumed that actions can refer to single actions or multiple actions across different
-    sensors. Potentisl actions are unique and their order is not important.
+    sensors. Potential actions are unique and their order is not important.
 
     """
     action_set: set = Property(doc="The set of actions available to the sensor(s)")
+
+
+class RandomDiscreteSensorManager(DiscreteSensorManager):
+    """As the name suggests, a sensor manager which returns a random choice of action or actions
+    from the list available. Its practical purpose is to serve as a baseline to test against.
+
+    """
+
+    def choose_actions(self, nchoose=1, *args, **kwargs):
+        """Return a randomly chosen list of actions from the action set. To ensure no
+        order-preservation, the action set is first listified and then shuffled before a sample
+        is selected.
+
+        Parameters
+        ----------
+        nchoose : int
+            Number of actions from the set to choose
+
+        Returns
+        -------
+        : list
+            The actions selected.
+        """
+
+        return sample(shuffle(list(self.action_set)), k=nchoose)
+
+    def calculate_reward(self, action, reward_function, *args, **kwargs):
+        """Strictly speaking this isn't required as the choice of action is made at random. It is
+        useful, however, to be able to return the reward/cost of the action(s) for baseline
+        calculation.
+
+        Parameters
+        ----------
+        action :
+            The action to test
+        reward_function : function
+            A function which operates on action to return a reward
+
+        Returns
+        -------
+        :
+            The value of the reward
+
+        """
+        return reward_function(action, *args, **kwargs)
