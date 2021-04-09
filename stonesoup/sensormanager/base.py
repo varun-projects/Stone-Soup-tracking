@@ -20,6 +20,14 @@ class SensorManager(Base, ABC):
     which communicate with other sensor managers in a networked fashion.
 
     """
+    reward_function: function = Property(default=None,
+                                         doc="A function designed to work out the reward "
+                                             "associated with an action or set of actions. This "
+                                             "may also incorporate a notion of the cost of "
+                                             "making a measurement. The values returned may be "
+                                             "scalar or vector in the case of multi-objective "
+                                             "optimisation. Metrics may be of any type and in "
+                                             "any units.")
 
     @abstractmethod
     def choose_actions(self, *args, **kwargs):
@@ -32,21 +40,6 @@ class SensorManager(Base, ABC):
             A set of actions interpretable by the input set of sensors
 
 
-        """
-
-        raise NotImplementedError
-
-    @abstractmethod
-    def calculate_reward(self, *args, **kwargs):
-        """A method designed to work out the reward associated with an action or set of actions.
-        This may also incorporate a notion of the cost of making a measurment. The values returned
-        may be scalar or vector in the case of multi-objective optimisation. Metrics may be of any
-        type and in any units.
-
-        Returns
-        -------
-        : (various)
-            A reward or rewards
         """
         raise NotImplementedError
 
@@ -83,23 +76,3 @@ class RandomDiscreteSensorManager(DiscreteSensorManager):
         """
 
         return sample(shuffle(list(self.action_set)), k=nchoose)
-
-    def calculate_reward(self, action, reward_function, *args, **kwargs):
-        """Strictly speaking this isn't required as the choice of action is made at random. It is
-        useful, however, to be able to return the reward/cost of the action(s) for baseline
-        calculation.
-
-        Parameters
-        ----------
-        action :
-            The action to test
-        reward_function : function
-            A function which operates on action to return a reward
-
-        Returns
-        -------
-        :
-            The value of the reward
-
-        """
-        return reward_function(action, *args, **kwargs)
