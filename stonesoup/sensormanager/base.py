@@ -74,7 +74,7 @@ class RandomDiscreteSensorManager(DiscreteSensorManager):
         Parameters
         ----------
         nchoose : int
-            Number of actions from the set to choose
+            Number of actions from the set to choose (default is 1)
 
         Returns
         -------
