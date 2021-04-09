@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from abc import abstractmethod, ABC
+from types import FunctionType  # Is this really the way to do this?
 from random import sample, shuffle
 
 from ..base import Base, Property
@@ -20,14 +21,12 @@ class SensorManager(Base, ABC):
     which communicate with other sensor managers in a networked fashion.
 
     """
-    reward_function: function = Property(default=None,
-                                         doc="A function designed to work out the reward "
-                                             "associated with an action or set of actions. This "
-                                             "may also incorporate a notion of the cost of "
-                                             "making a measurement. The values returned may be "
-                                             "scalar or vector in the case of multi-objective "
-                                             "optimisation. Metrics may be of any type and in "
-                                             "any units.")
+    reward_function: FunctionType = Property(
+        default=None, doc="A function designed to work out the reward associated with an action "
+                          "or set of actions. This may also incorporate a notion of the cost of "
+                          "making a measurement. The values returned may be scalar or vector in "
+                          "the case of multi-objective optimisation. Metrics may be of any type "
+                          "and in any units.")
 
     @abstractmethod
     def choose_actions(self, *args, **kwargs):
