@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from abc import abstractmethod, ABC
-from types import FunctionType  # Is this really the way to do this?
+from typing import Callable, Set
 from random import sample, shuffle
 
 from ..base import Base, Property
+from ..sensor.sensor import Sensor
 
 
 class SensorManager(Base, ABC):
@@ -21,12 +22,12 @@ class SensorManager(Base, ABC):
     which communicate with other sensor managers in a networked fashion.
 
     """
-    reward_function: FunctionType = Property(
-        default=None, doc="A function designed to work out the reward associated with an action "
-                          "or set of actions. This may also incorporate a notion of the cost of "
-                          "making a measurement. The values returned may be scalar or vector in "
-                          "the case of multi-objective optimisation. Metrics may be of any type "
-                          "and in any units.")
+    reward_function: Callable = Property(
+        default=None, doc="A function or class designed to work out the reward associated with an "
+                          "action or set of actions. This may also incorporate a notion of the "
+                          "cost of making a measurement. The values returned may be scalar or "
+                          "vector in the case of multi-objective optimisation. Metrics may be of "
+                          "any type and in any units.")
 
     @abstractmethod
     def choose_actions(self, *args, **kwargs):
@@ -35,10 +36,10 @@ class SensorManager(Base, ABC):
 
         Returns
         -------
-        : Set
-            A set of actions interpretable by the input set of sensors
-
-
+        : dict {Sensor: [Action]}
+            Key-value pairs of the form 'sensor: actions'. In the general case a sensor may be
+            given a single action, or a list. The actions themselves are objects which must be
+            interpretable by the sensor to which they are assigned.
         """
         raise NotImplementedError
 
@@ -49,7 +50,9 @@ class DiscreteSensorManager(SensorManager):
     sensors. Potential actions are unique and their order is not important.
 
     """
-    action_set: set = Property(doc="The set of actions available to the sensor(s)")
+    sensors: Set[Sensor] = Property(doc="The sensor(s) which the sensor manager is managing. "
+                                        "These must be capable of returning available actions.")
+    # action_set: set = Property(doc="The set of actions available to the sensor(s)")
 
 
 class RandomDiscreteSensorManager(DiscreteSensorManager):
@@ -70,8 +73,13 @@ class RandomDiscreteSensorManager(DiscreteSensorManager):
 
         Returns
         -------
-        : list
-            The actions selected.
+        : dict
+            The pairs of {sensor: actions selected}
         """
+        out_dict = dict()
 
-        return sample(shuffle(list(self.action_set)), k=nchoose)
+        for sensor in self.sensors:
+            out_dict[sensor] = sensor.action_set[sample(shuffle(list(sensor.action_set)),
+                                                        k=nchoose)]
+
+        return out_dict
