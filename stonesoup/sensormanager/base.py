@@ -22,6 +22,9 @@ class SensorManager(Base, ABC):
     which communicate with other sensor managers in a networked fashion.
 
     """
+    sensors: Set[Sensor] = Property(doc="The sensor(s) which the sensor manager is managing. "
+                                        "These must be capable of returning available actions.")
+
     reward_function: Callable = Property(
         default=None, doc="A function or class designed to work out the reward associated with an "
                           "action or set of actions. This may also incorporate a notion of the "
@@ -44,25 +47,14 @@ class SensorManager(Base, ABC):
         raise NotImplementedError
 
 
-class DiscreteSensorManager(SensorManager):
-    """A sensor manager in which the actions comprise a discrete collaction of objects. It is
-    presumed that actions can refer to single actions or multiple actions across different
-    sensors. Potential actions are unique and their order is not important.
-
-    """
-    sensors: Set[Sensor] = Property(doc="The sensor(s) which the sensor manager is managing. "
-                                        "These must be capable of returning available actions.")
-    # action_set: set = Property(doc="The set of actions available to the sensor(s)")
-
-
-class RandomDiscreteSensorManager(DiscreteSensorManager):
+class RandomSensorManager(SensorManager):
     """As the name suggests, a sensor manager which returns a random choice of action or actions
     from the list available. Its practical purpose is to serve as a baseline to test against.
 
     """
 
     def choose_actions(self, nchoose=1, *args, **kwargs):
-        """Return a randomly chosen list of actions from the action set. To ensure no
+        """Return a randomly chosen [list of] action(s) from the action set. To ensure no
         order-preservation, the action set is first listified and then shuffled before a sample
         is selected.
 
@@ -74,7 +66,7 @@ class RandomDiscreteSensorManager(DiscreteSensorManager):
         Returns
         -------
         : dict
-            The pairs of {sensor: actions selected}
+            The pairs of {sensor: action(s) selected}
         """
         out_dict = dict()
 
