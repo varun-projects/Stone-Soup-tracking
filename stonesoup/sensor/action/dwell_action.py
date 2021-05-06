@@ -13,11 +13,11 @@ class ChangeDwellAction(Type):
     value: Angle = Property()
     owner: object = Property()
     start_time: datetime.datetime = Property()
+    end_time: datetime.datetime = Property()
+    increasing_angle: bool = Property()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # end-time is dependent on the sensor, and is left for the sensor to calculate
-        self.end_time = None
 
 
 class DwellActionsGenerator(Type):
@@ -81,11 +81,43 @@ class DwellActionsGenerator(Type):
             else:
                 return False
 
+    def _get_end_time_direction(self, bearing):
+        if self.initial_bearing <= bearing:
+            if bearing - self.initial_bearing < self.initial_bearing + 2 * np.pi - bearing:
+                angle_delta = bearing - self.initial_bearing
+                increasing = True
+            else:
+                angle_delta = self.initial_bearing + 2 * np.pi - bearing
+                increasing = False
+        else:
+            if self.initial_bearing - bearing < bearing + 2 * np.pi - self.initial_bearing:
+                angle_delta = self.initial_bearing - bearing
+                increasing = False
+            else:
+                angle_delta = bearing + 2 * np.pi - self.initial_bearing
+                increasing = True
+
+        return self.start_time + datetime.timedelta(seconds=angle_delta / self.rps), increasing
+
     def __iter__(self) -> ChangeDwellAction:
         """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]
         element of the dwell centre's state vector."""
         current_bearing = self.min
         while current_bearing <= self.max:
+            end_time, increasing = self._get_end_time_direction(current_bearing)
             yield ChangeDwellAction(value=current_bearing, owner=self.owner,
-                                    start_time=self.start_time)
+                                    start_time=self.start_time, end_time=end_time,
+                                    increasing_angle=increasing)
             current_bearing += self.resolution
+
+    def action_from_value(self, value):
+
+        if isinstance(value, (int, float)):
+            value = Angle(value)
+        if not isinstance(value, Angle):
+            raise ValueError("Can only generate action from an Angle/float/int type")
+
+        end_time, increasing = self._get_end_time_direction(value)
+
+        return ChangeDwellAction(value=value, owner=self.owner, start_time=self.start_time,
+                                 end_time=end_time, increasing_angle=increasing)

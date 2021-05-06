@@ -92,20 +92,12 @@ class SimpleRadar(RadarBearingRange):
         return detections
 
     def add_action(self, action):
-        """Change current action to a given one. Will add an end-time to the action if it does not
-        have one."""
+        """Change current action to a given one."""
         if action.start_time < self.dwell_centre.timestamp:
             # need to think about this more, as sensor manager will need time to return action
             raise ValueError("Cannot schedule action that starts before current time.")
-        if action.end_time is None:
-            self.add_end_time(action)
-        self._action = action
 
-    def add_end_time(self, action):
-        """Calculates how long (in seconds) an action will take to complete, given the current
-        state (assumption is that action is ChangeDwellAction type)."""
-        angle_delta = np.abs(action.value - self.dwell_centre.state_vector[0, 0])
-        action.end_time = action.start_time + datetime.timedelta(seconds=angle_delta / self.rps)
+        self._action = action
 
     @property
     def current_action(self):
@@ -118,23 +110,10 @@ class SimpleRadar(RadarBearingRange):
 
     def _do_single_action(self, duration):
         """Do single action for a duration (assumes duration doesn't go beyond action end-time)."""
-        target = self.current_action.value
-        current_value = self.dwell_centre.state_vector[0, 0]
-
         angle_delta = duration.total_seconds() * self.rps * 2 * np.pi
+        increasing = self.current_action.increasing_angle
 
-        if target < current_value:
-            if Angle(target - current_value - np.pi) < Angle(target - current_value):
-                add = True
-            else:
-                add = False
-        else:
-            if Angle(current_value - target - np.pi) < Angle(current_value - target):
-                add = False
-            else:
-                add = True
-
-        if add:
+        if increasing:
             self.dwell_centre.state_vector[0, 0] += angle_delta
         else:
             self.dwell_centre.state_vector[0, 0] -= angle_delta
