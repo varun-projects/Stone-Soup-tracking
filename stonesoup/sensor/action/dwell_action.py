@@ -53,10 +53,11 @@ class DwellActionsGenerator(Type):
         return Angle(self.duration.total_seconds() * self.rps * 2 * np.pi)
 
     @property
-    def min_(self):
+    def min(self):
         return Angle(self.initial_bearing - self.angle_delta)
 
-    def max_(self):
+    @property
+    def max(self):
         return Angle(self.initial_bearing + self.angle_delta)
 
     def __contains__(self, item):
@@ -67,7 +68,7 @@ class DwellActionsGenerator(Type):
         if isinstance(item, (float, int)):
             item = Angle(item)
 
-        left, right = Angle(self.min_ - self.fov / 2), Angle(self.max_ + self.fov / 2)
+        left, right = Angle(self.min - self.fov / 2), Angle(self.max + self.fov / 2)
 
         if left < right:
             if left <= item <= right:
@@ -83,8 +84,8 @@ class DwellActionsGenerator(Type):
     def __iter__(self) -> ChangeDwellAction:
         """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]
         element of the dwell centre's state vector."""
-        current_bearing = self.min_
-        while current_bearing <= self.max_:
+        current_bearing = self.min
+        while current_bearing <= self.max:
             yield ChangeDwellAction(value=current_bearing, owner=self.owner,
                                     start_time=self.start_time)
             current_bearing += self.resolution
