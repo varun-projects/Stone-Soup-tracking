@@ -105,7 +105,7 @@ class SimpleRadar(RadarBearingRange):
         """Calculates how long (in seconds) an action will take to complete, given the current
         state (assumption is that action is ChangeDwellAction type)."""
         angle_delta = np.abs(action.value - self.dwell_centre.state_vector[0, 0])
-        action.end_time = angle_delta / self.rps
+        action.end_time = action.start_time + datetime.timedelta(seconds=angle_delta / self.rps)
 
     @property
     def current_action(self):
