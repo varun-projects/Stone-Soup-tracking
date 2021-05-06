@@ -32,8 +32,9 @@ class DwellActionsGenerator(Type):
         super().__init__(*args, **kwargs)
         self.resolution = Angle(np.radians(1))
 
-    def __call__(self, resolution):
-        self.resolution = resolution
+    def __call__(self, resolution=None):
+        if resolution is not None:
+            self.resolution = resolution
 
     @property
     def duration(self):
