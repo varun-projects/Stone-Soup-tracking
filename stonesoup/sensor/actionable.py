@@ -148,7 +148,7 @@ class SimpleRadar(RadarBearingRange):
         if self.current_action.end_time is not None:
             # then action is not default, so has end-time
 
-            if self.dwell_centre + duration < self._action.end_time:
+            if self.dwell_centre.timestamp + duration < self._action.end_time:
                 # do current action until timestamp is reached
                 action_duration = duration
             else:
