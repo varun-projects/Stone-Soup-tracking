@@ -62,10 +62,18 @@ class DwellActionsGenerator(Type):
         if isinstance(item, (float, int)):
             item = Angle(item)
 
-        if Angle(self.min_ - self.fov / 2) <= item <= Angle(self.max_ + self.fov / 2):
-            return True
+        left, right = Angle(self.min_ - self.fov / 2), Angle(self.max_ + self.fov / 2)
+
+        if left < right:
+            if left <= item <= right:
+                return True
+            else:
+                return False
         else:
-            return False
+            if Angle(np.radians(-180)) <= item <= left or right <= Angle(np.radians(180)):
+                return True
+            else:
+                return False
 
     def __iter__(self, resolution: Angle = np.radians(1)) -> ChangeDwellAction:
         """Returns CHangeDwellAction types, where the value is a possible value of the [0, 0]

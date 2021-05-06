@@ -7,6 +7,7 @@ from stonesoup.base import Property
 from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
 from stonesoup.sensor.action.dwell_action import DwellActionsGenerator, ChangeDwellAction
 from stonesoup.sensor.radar import RadarBearingRange
+from stonesoup.types.angle import Angle
 from stonesoup.types.array import StateVector
 from stonesoup.types.detection import TrueDetection
 from stonesoup.types.state import State
@@ -119,11 +120,24 @@ class SimpleRadar(RadarBearingRange):
         """Do single action for a duration (assumes duration doesn't go beyond action end-time)."""
         target = self.current_action.value
         current_value = self.dwell_centre.state_vector[0, 0]
+
         angle_delta = duration.total_seconds() * self.rps * 2 * np.pi
+
         if target < current_value:
-            self.dwell_centre.state_vector[0, 0] -= angle_delta
+            if Angle(target - current_value - np.pi) < Angle(target - current_value):
+                add = True
+            else:
+                add = False
         else:
+            if Angle(current_value - target - np.pi) < Angle(current_value - target):
+                add = False
+            else:
+                add = True
+
+        if add:
             self.dwell_centre.state_vector[0, 0] += angle_delta
+        else:
+            self.dwell_centre.state_vector[0, 0] -= angle_delta
         self.dwell_centre.timestamp += duration
 
     def do_action(self, timestamp):
