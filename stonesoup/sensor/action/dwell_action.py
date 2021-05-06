@@ -30,6 +30,10 @@ class DwellActionsGenerator(Type):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.resolution = Angle(np.radians(1))
+
+    def __call__(self, resolution):
+        self.resolution = resolution
 
     @property
     def duration(self):
@@ -75,11 +79,11 @@ class DwellActionsGenerator(Type):
             else:
                 return False
 
-    def __iter__(self, resolution: Angle = np.radians(1)) -> ChangeDwellAction:
-        """Returns CHangeDwellAction types, where the value is a possible value of the [0, 0]
+    def __iter__(self) -> ChangeDwellAction:
+        """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]
         element of the dwell centre's state vector."""
         current_bearing = self.min_
         while current_bearing <= self.max_:
             yield ChangeDwellAction(value=current_bearing, owner=self.owner,
                                     start_time=self.start_time)
-            current_bearing += resolution
+            current_bearing += self.resolution
