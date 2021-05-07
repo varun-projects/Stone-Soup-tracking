@@ -37,7 +37,10 @@ class SimpleRadar(RadarBearingRange):
         given."""
         return ChangeDwellAction(value=self.dwell_centre.state_vector[0, 0],
                                  owner=self,
-                                 start_time=self.dwell_centre.timestamp)
+                                 start_time=self.dwell_centre.timestamp,
+                                 end_time=None,
+                                 increasing_angle=True,
+                                 fov=self.fov)
 
     @property
     def rps(self):
@@ -137,8 +140,11 @@ class SimpleRadar(RadarBearingRange):
             self._do_single_action(action_duration)
             duration -= action_duration  # get remaining time
 
-        # do default action until timestamp reached (duration might be 0)
-        self._do_single_action(duration)
+            self.dwell_centre.timestamp = timestamp
+
+        else:
+            # do default action until timestamp reached (duration might be 0)
+            self._do_single_action(duration)
 
     def get_actions(self, timestamp: datetime.datetime) -> DwellActionsGenerator:
         """

@@ -15,6 +15,7 @@ class ChangeDwellAction(Type):
     start_time: datetime.datetime = Property(readonly=True)
     end_time: datetime.datetime = Property(readonly=True)
     increasing_angle: bool = Property(readonly=True)
+    fov: Angle = Property(readonly=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,6 +27,29 @@ class ChangeDwellAction(Type):
 
     def __hash__(self):
         return hash(tuple(getattr(self, name) for name in type(self).properties))
+
+    def __contains__(self, item):
+        fov_min = self.value-self.fov / 2
+        fov_max = self.value+self.fov / 2
+
+        if isinstance(item, ChangeDwellAction):
+            item = item.value
+
+        if isinstance(item, (float, int)):
+            item = Angle(item)
+
+        left, right = Angle(fov_min - self.fov / 2), Angle(fov_max + self.fov / 2)
+
+        if left < right:
+            if left <= item <= right:
+                return True
+            else:
+                return False
+        else:
+            if Angle(np.radians(-180)) <= item <= left or right <= item <= Angle(np.radians(180)):
+                return True
+            else:
+                return False
 
 
 class DwellActionsGenerator(Type):
@@ -62,11 +86,17 @@ class DwellActionsGenerator(Type):
 
     @property
     def min(self):
-        return Angle(self.initial_bearing - self.angle_delta)
+        if self.angle_delta >= np.pi:
+            return Angle(-np.pi)
+        else:
+            return Angle(self.initial_bearing - self.angle_delta)
 
     @property
     def max(self):
-        return Angle(self.initial_bearing + self.angle_delta)
+        if self.angle_delta >= np.pi:
+            return Angle(np.pi)
+        else:
+            return Angle(self.initial_bearing + self.angle_delta)
 
     def __contains__(self, item):
 
@@ -84,7 +114,7 @@ class DwellActionsGenerator(Type):
             else:
                 return False
         else:
-            if Angle(np.radians(-180)) <= item <= left or right <= Angle(np.radians(180)):
+            if Angle(np.radians(-180)) <= item <= left or right <= item <= Angle(np.radians(180)):
                 return True
             else:
                 return False
@@ -105,7 +135,7 @@ class DwellActionsGenerator(Type):
                 angle_delta = bearing + 2 * np.pi - self.initial_bearing
                 increasing = True
 
-        return self.start_time + datetime.timedelta(seconds=angle_delta / self.rps), increasing
+        return self.start_time + datetime.timedelta(seconds=angle_delta / (self.rps*2*np.pi)), increasing
 
     def __iter__(self) -> ChangeDwellAction:
         """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]
@@ -115,7 +145,7 @@ class DwellActionsGenerator(Type):
             end_time, increasing = self._get_end_time_direction(current_bearing)
             yield ChangeDwellAction(value=current_bearing, owner=self.owner,
                                     start_time=self.start_time, end_time=end_time,
-                                    increasing_angle=increasing)
+                                    increasing_angle=increasing, fov=self.fov)
             current_bearing += self.resolution
 
     def action_from_value(self, value):
@@ -124,7 +154,7 @@ class DwellActionsGenerator(Type):
             value = Angle(value)
         if not isinstance(value, Angle):
             raise ValueError("Can only generate action from an Angle/float/int type")
-        
+
         if value not in self:
             return None  # Should this raise an error?
 
@@ -133,4 +163,4 @@ class DwellActionsGenerator(Type):
         end_time, increasing = self._get_end_time_direction(value)
 
         return ChangeDwellAction(value=value, owner=self.owner, start_time=self.start_time,
-                                 end_time=end_time, increasing_angle=increasing)
+                                 end_time=end_time, increasing_angle=increasing, fov=self.fov)
