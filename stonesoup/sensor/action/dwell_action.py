@@ -10,14 +10,22 @@ from stonesoup.types.state import State
 
 
 class ChangeDwellAction(Type):
-    value: Angle = Property()
-    owner: object = Property()
-    start_time: datetime.datetime = Property()
-    end_time: datetime.datetime = Property()
-    increasing_angle: bool = Property()
+    value: Angle = Property(readonly=True)
+    owner: object = Property(readonly=True)
+    start_time: datetime.datetime = Property(readonly=True)
+    end_time: datetime.datetime = Property(readonly=True)
+    increasing_angle: bool = Property(readonly=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
+        return all(getattr(self, name) == getattr(other, name) for name in type(self).properties)
+
+    def __hash__(self):
+        return hash(tuple(getattr(self, name) for name in type(self).properties))
 
 
 class DwellActionsGenerator(Type):
@@ -119,6 +127,8 @@ class DwellActionsGenerator(Type):
         
         if value not in self:
             return None  # Should this raise an error?
+
+        value -= value % self.resolution
 
         end_time, increasing = self._get_end_time_direction(value)
 
