@@ -53,7 +53,7 @@ class RandomSensorManager(SensorManager):
 
     """
 
-    def choose_actions(self, nchoose=1, *args, **kwargs):
+    def choose_actions(self, timestamp, nchoose=1, *args, **kwargs):
         """Return a randomly chosen [list of] action(s) from the action set. To ensure no
         order-preservation, the action set is first listified and then shuffled before a sample
         is selected.
@@ -68,10 +68,10 @@ class RandomSensorManager(SensorManager):
         : dict
             The pairs of {sensor: action(s) selected}
         """
-        out_dict = dict()
+        sensor_action_assignment = dict()
 
         for sensor in self.sensors:
-            out_dict[sensor] = sensor.action_set[sample(shuffle(list(sensor.action_set)),
-                                                        k=nchoose)]
+            actions = sensor.get_actions(timestamp)
+            sensor_action_assignment[sensor] = np.random.choice(action, nchoose=nchoose)
 
-        return out_dict
+        return sensor_action_assignment
