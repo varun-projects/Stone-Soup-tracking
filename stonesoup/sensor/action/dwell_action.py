@@ -116,6 +116,9 @@ class DwellActionsGenerator(Type):
             value = Angle(value)
         if not isinstance(value, Angle):
             raise ValueError("Can only generate action from an Angle/float/int type")
+        
+        if value not in self:
+            return None  # Should this raise an error?
 
         end_time, increasing = self._get_end_time_direction(value)
 
