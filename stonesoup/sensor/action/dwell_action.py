@@ -109,33 +109,30 @@ class DwellActionsGenerator(Type):
         left, right = Angle(self.min - self.fov / 2), Angle(self.max + self.fov / 2)
 
         if left < right:
-            if left <= item <= right:
-                return True
-            else:
-                return False
+            return left <= item <= right
         else:
-            if Angle(np.radians(-180)) <= item <= left or right <= item <= Angle(np.radians(180)):
-                return True
-            else:
-                return False
+            return Angle(-np.pi) <= item <= left or right <= item <= Angle(np.pi)
 
     def _get_end_time_direction(self, bearing):
         if self.initial_bearing <= bearing:
-            if bearing - self.initial_bearing < self.initial_bearing + 2 * np.pi - bearing:
+            if bearing - self.initial_bearing < self.initial_bearing + 2*np.pi - bearing:
                 angle_delta = bearing - self.initial_bearing
                 increasing = True
             else:
-                angle_delta = self.initial_bearing + 2 * np.pi - bearing
+                angle_delta = self.initial_bearing + 2*np.pi - bearing
                 increasing = False
         else:
-            if self.initial_bearing - bearing < bearing + 2 * np.pi - self.initial_bearing:
+            if self.initial_bearing - bearing < bearing + 2*np.pi - self.initial_bearing:
                 angle_delta = self.initial_bearing - bearing
                 increasing = False
             else:
-                angle_delta = bearing + 2 * np.pi - self.initial_bearing
+                angle_delta = bearing + 2*np.pi - self.initial_bearing
                 increasing = True
 
-        return self.start_time + datetime.timedelta(seconds=angle_delta / (self.rps*2*np.pi)), increasing
+        return (
+            self.start_time + datetime.timedelta(seconds=angle_delta / (self.rps*2*np.pi)),
+            increasing
+        )
 
     def __iter__(self) -> ChangeDwellAction:
         """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]

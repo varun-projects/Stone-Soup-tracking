@@ -5,9 +5,9 @@ import numpy as np
 
 from stonesoup.base import Property
 from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
+from stonesoup.functions import mod_bearing
 from stonesoup.sensor.action.dwell_action import DwellActionsGenerator, ChangeDwellAction
 from stonesoup.sensor.radar import RadarBearingRange
-from stonesoup.types.angle import Angle
 from stonesoup.types.array import StateVector
 from stonesoup.types.detection import TrueDetection
 from stonesoup.types.state import State
@@ -117,9 +117,11 @@ class SimpleRadar(RadarBearingRange):
         increasing = self.current_action.increasing_angle
 
         if increasing:
-            self.dwell_centre.state_vector[0, 0] += angle_delta
+            self.dwell_centre.state_vector[0, 0] = mod_bearing(self.dwell_centre.state_vector[0, 0]
+                                                               + angle_delta)
         else:
-            self.dwell_centre.state_vector[0, 0] -= angle_delta
+            self.dwell_centre.state_vector[0, 0] = mod_bearing(self.dwell_centre.state_vector[0, 0]
+                                                               - angle_delta)
         self.dwell_centre.timestamp += duration
 
     def do_action(self, timestamp):
