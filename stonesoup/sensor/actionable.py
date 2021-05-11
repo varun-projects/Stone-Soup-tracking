@@ -39,7 +39,7 @@ class SimpleRadar(RadarBearingRange):
                                  owner=self,
                                  start_time=self.dwell_centre.timestamp,
                                  end_time=None,
-                                 increasing_angle=True,
+                                 increasing_angle=None,
                                  fov=self.fov)
 
     @property
@@ -96,7 +96,7 @@ class SimpleRadar(RadarBearingRange):
 
     def add_action(self, action):
         """Change current action to a given one."""
-        if action.start_time < self.dwell_centre.timestamp:
+        if action.start_time != self.dwell_centre.timestamp:
             # need to think about this more, as sensor manager will need time to return action
             raise ValueError("Cannot schedule action that starts before current time.")
 
@@ -116,7 +116,10 @@ class SimpleRadar(RadarBearingRange):
         angle_delta = duration.total_seconds() * self.rps * 2 * np.pi
         increasing = self.current_action.increasing_angle
 
-        if increasing:
+        if increasing is None:
+            # no direction, do nothing
+            pass
+        elif increasing:
             self.dwell_centre.state_vector[0, 0] = mod_bearing(self.dwell_centre.state_vector[0, 0]
                                                                + angle_delta)
         else:
