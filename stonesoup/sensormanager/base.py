@@ -2,7 +2,7 @@
 
 from abc import abstractmethod, ABC
 from typing import Callable, Set
-from random import sample, shuffle
+from random import sample, shuffle, sample
 
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
@@ -72,6 +72,6 @@ class RandomSensorManager(SensorManager):
 
         for sensor in self.sensors:
             actions = sensor.get_actions(timestamp)
-            sensor_action_assignment[sensor] = np.random.choice(action, nchoose=nchoose)
+            sensor_action_assignment[sensor] = sample(list(actions), k=nchoose)
 
         return sensor_action_assignment

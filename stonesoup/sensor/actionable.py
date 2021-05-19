@@ -22,8 +22,7 @@ class SimpleRadar(RadarBearingRange):
         super().__init__(*args, **kwargs)
         self._action = None
 
-    @property
-    def measurement_model(self, rot_offset):
+    def measurement_model(self, rot_offset=[0, 0, 0]):
         return CartesianToBearingRange(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
@@ -145,11 +144,8 @@ class SimpleRadar(RadarBearingRange):
             self._do_single_action(action_duration)
             duration -= action_duration  # get remaining time
 
-            self.dwell_centre.timestamp = timestamp
-
-        else:
-            # do default action until timestamp reached (duration might be 0)
-            self._do_single_action(duration)
+        # do default action until timestamp reached (duration might be 0)
+        self._do_single_action(duration)
 
     def get_actions(self, timestamp: datetime.datetime) -> DwellActionsGenerator:
         """
