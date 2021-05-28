@@ -9,7 +9,6 @@ import itertools as it
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
 from ..predictor.kalman import KalmanPredictor
-from ..updater.kalman import ExtendedKalmanUpdater
 from ..models.measurement.nonlinear import CartesianToBearingRange
 
 
@@ -95,8 +94,6 @@ class BruteForceSensorManager(SensorManager):
     sensors: Set[Sensor] = Property(doc="The sensor(s) which the sensor manager is managing. "
                                         "These must be capable of returning available actions.")
     predictor: KalmanPredictor = Property(doc="Predictor used to predict the track to a new state")
-    updater: ExtendedKalmanUpdater = Property(doc="Updater used in the reward function to update "
-                                                  "the track to the new state.")
     reward_function: Callable = Property(doc="A function or class to calculate the reward "
                                              "associated with a given configuration of sensors "
                                              "and actions. The configuration which gives the "
@@ -136,20 +133,16 @@ class BruteForceSensorManager(SensorManager):
         -------
         : dict
             The pairs of {sensor: action(s) selected}"""
+
         all_action_choices = dict()
 
         # For each sensor, randomly select an action to take
         for sensor in self.sensors:
-            actions = sensor.get_actions(timestamp)  # iterable
-
             action_choices = list()
-
-            for track in tracks_list:
-                prediction = self.predictor.predict(track[-1], timestamp=timestamp)
-                relative_position = prediction.state_vector[[0, 2]] - sensor.position[[0, 1]]
-                angle_to_target = np.arctan2(relative_position[1], relative_position[0])
-                if angle_to_target in actions:
-                    action_choices.append(actions.action_from_value(angle_to_target))
+            actions = sensor.get_actions(timestamp)  # iterable
+            for action in actions:
+                action_choices.append(action)
+                print(action)
 
             all_action_choices[sensor] = action_choices
 
@@ -160,8 +153,7 @@ class BruteForceSensorManager(SensorManager):
         best_reward = -np.inf
         selected_config = None
         for config in configs:
-            reward = self.reward_function(config, tracks_list, timestamp,
-                                          self.predictor, self.updater)
+            reward = self.reward_function(config, tracks_list, timestamp)
             if reward > best_reward:
                 selected_config = config
                 best_reward = reward
