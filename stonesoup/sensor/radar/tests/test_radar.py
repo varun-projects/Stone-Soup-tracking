@@ -306,6 +306,7 @@ def test_rotating_radar():
 
     # Rotate radar such that the target is in FOV
     timestamp = timestamp + datetime.timedelta(seconds=0.5)
+    radar.act(timestamp)
 
     target_state = GroundTruthState(radar_position + np.array([[5], [5]]), timestamp=timestamp)
     target_truth = GroundTruthPath([target_state])
@@ -414,6 +415,7 @@ def test_raster_scan_radar():
 
     # Rotate radar such that the target is in FOV
     timestamp = timestamp + datetime.timedelta(seconds=1.0)
+    radar.act(timestamp)
 
     target_state = GroundTruthState(radar_position + np.array([[-5], [5]]), timestamp=timestamp)
     target_truth = GroundTruthPath([target_state])

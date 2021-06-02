@@ -1,32 +1,22 @@
 # -*- coding: utf-8 -*-
 import datetime
+from typing import Iterator
 
 import numpy as np
 
-from stonesoup.base import Property
-from stonesoup.types.angle import Angle
-from stonesoup.types.base import Type
-from stonesoup.types.state import State
+from . import Action, ActionGenerator
+from ...base import Property
+from ...types.angle import Angle
+from ...types.state import State
 
 
-class ChangeDwellAction(Type):
+class ChangeDwellAction(Action):
     value: Angle = Property(readonly=True)
     owner: object = Property(readonly=True)
     start_time: datetime.datetime = Property(readonly=True)
     end_time: datetime.datetime = Property(readonly=True)
     increasing_angle: bool = Property(readonly=True)
     fov: Angle = Property(readonly=True)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def __eq__(self, other):
-        if not isinstance(other, type(self)):
-            return False
-        return all(getattr(self, name) == getattr(other, name) for name in type(self).properties)
-
-    def __hash__(self):
-        return hash(tuple(getattr(self, name) for name in type(self).properties))
 
     def __contains__(self, item):
         fov_min = self.value-self.fov / 2
@@ -52,7 +42,7 @@ class ChangeDwellAction(Type):
                 return False
 
 
-class DwellActionsGenerator(Type):
+class DwellActionsGenerator(ActionGenerator):
     dwell_centre: State = Property()
     rpm: float = Property()
     fov: Angle = Property()
@@ -134,7 +124,7 @@ class DwellActionsGenerator(Type):
             increasing
         )
 
-    def __iter__(self) -> ChangeDwellAction:
+    def __iter__(self) -> Iterator[ChangeDwellAction]:
         """Returns ChangeDwellAction types, where the value is a possible value of the [0, 0]
         element of the dwell centre's state vector."""
         current_bearing = self.min

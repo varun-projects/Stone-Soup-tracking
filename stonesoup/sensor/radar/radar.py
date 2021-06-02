@@ -44,15 +44,19 @@ class RadarBearingRange(Sensor):
             "(and follow in format) the underlying "
             ":class:`~.CartesianToBearingRange` model")
 
-    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
-                **kwargs) -> Set[TrueDetection]:
-
-        measurement_model = CartesianToBearingRange(
+    @property
+    def measurement_model(self):
+        return CartesianToBearingRange(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
             noise_covar=self.noise_covar,
             translation_offset=self.position,
             rotation_offset=self.orientation)
+
+    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
+                **kwargs) -> Set[TrueDetection]:
+
+        measurement_model = self.measurement_model
 
         detections = set()
         for truth in ground_truths:
@@ -91,20 +95,9 @@ class RadarRotatingBearingRange(RadarBearingRange):
     max_range: float = Property(doc="The maximum detection range of the radar (in meters)")
     fov_angle: float = Property(doc="The radar field of view (FOV) angle (in radians).")
 
-    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
-                **kwargs) -> Set[TrueDetection]:
-
-        # Read timestamp from ground truth
-        try:
-            timestamp = next(iter(ground_truths.copy())).timestamp
-        except StopIteration:
-            # No ground truths to get timestamp from
-            return set()
-
-        # Rotate the radar antenna and compute new heading
-        self.rotate(timestamp)
+    @property
+    def measurement_model(self):
         antenna_heading = self.orientation[2, 0] + self.dwell_center.state_vector[0, 0]
-
         # Set rotation offset of underlying measurement model
         rot_offset = \
             StateVector(
@@ -112,12 +105,20 @@ class RadarRotatingBearingRange(RadarBearingRange):
                  [self.orientation[1, 0]],
                  [antenna_heading]])
 
-        measurement_model = CartesianToBearingRange(
+        return CartesianToBearingRange(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
             noise_covar=self.noise_covar,
             translation_offset=self.position,
             rotation_offset=rot_offset)
+
+    def act(self, timestamp):
+        # Rotate the radar antenna and compute new heading
+        self.rotate(timestamp)
+
+    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
+                **kwargs) -> Set[TrueDetection]:
+        measurement_model = self.measurement_model
 
         detections = set()
         for truth in ground_truths:
@@ -191,15 +192,19 @@ class RadarElevationBearingRange(RadarBearingRange):
             "(and follow in format) the underlying "
             ":class:`~.CartesianToElevationBearingRange` model")
 
-    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
-                **kwargs) -> Set[TrueDetection]:
-
-        measurement_model = CartesianToElevationBearingRange(
+    @property
+    def measurement_model(self):
+        return CartesianToElevationBearingRange(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
             noise_covar=self.noise_covar,
             translation_offset=self.position,
             rotation_offset=self.orientation)
+
+    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
+                **kwargs) -> Set[TrueDetection]:
+
+        measurement_model = self.measurement_model
 
         detections = set()
         for truth in ground_truths:
@@ -237,10 +242,9 @@ class RadarBearingRangeRate(RadarBearingRange):
             "(and follow in format) the underlying "
             ":class:`~.CartesianToBearingRangeRate` model")
 
-    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
-                **kwargs) -> Set[TrueDetection]:
-
-        measurement_model = CartesianToBearingRangeRate(
+    @property
+    def measurement_model(self):
+        return CartesianToBearingRangeRate(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
             velocity_mapping=self.velocity_mapping,
@@ -248,6 +252,11 @@ class RadarBearingRangeRate(RadarBearingRange):
             translation_offset=self.position,
             velocity=self.velocity,
             rotation_offset=self.orientation)
+
+    def measure(self, ground_truths: Set[GroundTruthState], noise: Union[np.ndarray, bool] = True,
+                **kwargs) -> Set[TrueDetection]:
+
+        measurement_model = self.measurement_model
 
         detections = set()
         for truth in ground_truths:
@@ -466,6 +475,13 @@ class AESARadar(Sensor):
         super().__init__(*args, **kwargs)
         if self.rotation_offset is None:
             self.rotation_offset = StateVector([0, 0, 0])
+
+    @measurement_model.getter
+    def measurement_model(self):
+        measurement_model = copy.deepcopy(self._property_measurement_model)
+        measurement_model.translation_offset = self.position.copy()
+        measurement_model.rotation_offset = self.rotation_offset.copy()
+        return measurement_model
 
     @property
     def _snr_constant(self):
