@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+from typing import Set
 
 import numpy as np
 
@@ -23,7 +24,11 @@ class SimpleRadar(RadarBearingRange):
         self._action = None
 
     @property
-    def measurement_model(self, rot_offset):
+    def measurement_model(self):
+        antenna_heading = self.orientation[2, 0] + self.dwell_centre.state_vector[0, 0]
+        rot_offset = StateVector(
+            [[self.orientation[0, 0]], [self.orientation[1, 0]], [antenna_heading]])
+
         return CartesianToBearingRange(
             ndim_state=self.ndim_state,
             mapping=self.position_mapping,
@@ -52,17 +57,7 @@ class SimpleRadar(RadarBearingRange):
         if not ground_truths:
             return set()
 
-        antenna_heading = self.orientation[2, 0] + self.dwell_centre.state_vector[0, 0]
-
-        rot_offset = StateVector(
-            [[self.orientation[0, 0]], [self.orientation[1, 0]], [antenna_heading]])
-
-        measurement_model = CartesianToBearingRange(
-            ndim_state=self.ndim_state,
-            mapping=self.position_mapping,
-            noise_covar=self.noise_covar,
-            translation_offset=self.position,
-            rotation_offset=rot_offset)
+        measurement_model = self.measurement_model
 
         detections = set()
         for truth in ground_truths:
@@ -94,13 +89,18 @@ class SimpleRadar(RadarBearingRange):
             detections.add(detection)
         return detections
 
-    def add_action(self, action):
+    def add_actions(self, actions):
         """Change current action to a given one."""
+        if len(actions) > 1:
+            raise ValueError("Only one action allowed")
+        action = actions[0]
         if action.start_time != self.dwell_centre.timestamp:
             # need to think about this more, as sensor manager will need time to return action
             raise ValueError("Cannot schedule action that starts before current time.")
 
         self._action = action
+
+        return True
 
     @property
     def current_action(self):
@@ -127,7 +127,7 @@ class SimpleRadar(RadarBearingRange):
                                                                - angle_delta)
         self.dwell_centre.timestamp += duration
 
-    def do_action(self, timestamp):
+    def act(self, timestamp: datetime.datetime):
         """Assumes only possible action is ChangeDwellAction type."""
 
         duration = timestamp - self.dwell_centre.timestamp
@@ -151,7 +151,8 @@ class SimpleRadar(RadarBearingRange):
             # do default action until timestamp reached (duration might be 0)
             self._do_single_action(duration)
 
-    def get_actions(self, timestamp: datetime.datetime) -> DwellActionsGenerator:
+    def actions(self, timestamp: datetime.datetime, start_timestamp: datetime.datetime = None) \
+            -> Set[DwellActionsGenerator]:
         """
         Method to create an action generator, concerning how the dwell centre can be modified
         at a particular timestamp.
@@ -159,6 +160,6 @@ class SimpleRadar(RadarBearingRange):
         timestamp of the dwell centre's state).
         """
 
-        return DwellActionsGenerator(dwell_centre=self.dwell_centre, rpm=self.rpm, fov=self.fov,
-                                     owner=self,
-                                     start_time=self.dwell_centre.timestamp, end_time=timestamp)
+        return {DwellActionsGenerator(dwell_centre=self.dwell_centre, rpm=self.rpm, fov=self.fov,
+                                      owner=self,
+                                      start_time=self.dwell_centre.timestamp, end_time=timestamp)}
