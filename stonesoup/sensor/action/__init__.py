@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Collection, Iterator
+from typing import Container, Iterator
 
 from ...base import Base
 
@@ -15,7 +15,7 @@ class Action(Base):
         return hash(tuple(getattr(self, name) for name in type(self).properties))
 
 
-class ActionGenerator(Base, Collection[Action]):
+class ActionGenerator(Base, Container[Action]):
 
     @abstractmethod
     def __contains__(self, item):

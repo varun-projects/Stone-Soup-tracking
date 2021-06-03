@@ -8,7 +8,7 @@ import itertools as it
 
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
-from ..predictor.kalman import KalmanPredictor
+# from ..predictor.kalman import KalmanPredictor
 from ..models.measurement.nonlinear import CartesianToBearingRange
 
 
@@ -79,8 +79,9 @@ class RandomSensorManager(SensorManager):
         sensor_action_assignment = dict()
 
         for sensor in self.sensors:
-            actions = sensor.get_actions(timestamp)
-            sensor_action_assignment[sensor] = np.random.choice(list(actions))
+            action_generators = sensor.actions(timestamp)
+            for action_gen in action_generators:
+                sensor_action_assignment[sensor] = np.random.choice(list(action_gen))
 
         return sensor_action_assignment
 
@@ -93,7 +94,6 @@ class BruteForceSensorManager(SensorManager):
 
     sensors: Set[Sensor] = Property(doc="The sensor(s) which the sensor manager is managing. "
                                         "These must be capable of returning available actions.")
-    predictor: KalmanPredictor = Property(doc="Predictor used to predict the track to a new state")
     reward_function: Callable = Property(doc="A function or class to calculate the reward "
                                              "associated with a given configuration of sensors "
                                              "and actions. The configuration which gives the "
@@ -138,25 +138,26 @@ class BruteForceSensorManager(SensorManager):
 
         # For each sensor, randomly select an action to take
         for sensor in self.sensors:
-            action_choices = list()
-            actions = sensor.get_actions(timestamp)  # iterable
-            for action in actions:
-                action_choices.append(action)
-                print(action)
-
+            # get action 'generator(s)'
+            action_generators = sensor.actions(timestamp)
+            # list possible action combinations for the sensor
+            action_choices = list(it.product(*action_generators))
+            # dictionary of sensors: list(action combinations)
             all_action_choices[sensor] = action_choices
 
+        # get tuple of dictionaries of sensors: actions
         configs = ({sensor: action
                     for sensor, action in zip(all_action_choices.keys(), actionconfig)}
                    for actionconfig in it.product(*all_action_choices.values()))
 
-        best_reward = -np.inf
-        selected_config = None
+        best_rewards = np.zeros(nchoose) - np.inf
+        selected_configs = [None] * nchoose
         for config in configs:
+            # calculate reward for dictionary of sensors: actions
             reward = self.reward_function(config, tracks_list, timestamp)
-            if reward > best_reward:
-                selected_config = config
-                best_reward = reward
+            if reward > min(best_rewards):
+                selected_configs[np.argmin(best_rewards)] = config
+                best_rewards[np.argmin(best_rewards)] = reward
 
         # Return mapping of sensors and chosen actions for sensors
-        return selected_config
+        return selected_configs
