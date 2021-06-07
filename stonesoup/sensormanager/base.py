@@ -8,8 +8,6 @@ import itertools as it
 
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
-# from ..predictor.kalman import KalmanPredictor
-from ..models.measurement.nonlinear import CartesianToBearingRange
 
 
 class SensorManager(Base, ABC):
@@ -82,7 +80,7 @@ class RandomSensorManager(SensorManager):
             action_generators = sensor.actions(timestamp)
             for action_gen in action_generators:
                 action_choices = list()
-                action_choices.append(np.random.choice(list(action_gen)))
+                action_choices.append(np.random.choice(list(action_gen)))  # random.sample
 
             sensor_action_assignment[sensor] = action_choices
 
@@ -106,17 +104,6 @@ class BruteForceSensorManager(SensorManager):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # Generate a dictionary measurement models for each sensor
-        # (for use before any measurements have been made)
-        self.measurement_models = dict()
-        for sensor in self.sensors:
-            measurement_model = CartesianToBearingRange(
-                ndim_state=4,
-                mapping=(0, 2),
-                noise_covar=sensor.noise_covar,
-                translation_offset=sensor.position)
-            self.measurement_models[sensor] = measurement_model
 
     def choose_actions(self, tracks_list, timestamp, nchoose=1, *args, **kwargs):
         """Returns a chosen [list of] action(s) from the action set for each sensor.
