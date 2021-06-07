@@ -28,15 +28,14 @@ class ChangeDwellAction(Action):
         if isinstance(item, (float, int)):
             item = Angle(item)
 
-        left, right = Angle(fov_min - self.fov / 2), Angle(fov_max + self.fov / 2)
-
-        if left < right:
-            if left <= item <= right:
+        if fov_min < fov_max:
+            if fov_min <= item <= fov_max:
                 return True
             else:
                 return False
         else:
-            if Angle(np.radians(-180)) <= item <= left or right <= item <= Angle(np.radians(180)):
+            if Angle(np.radians(-180)) <= item <= fov_min \
+                    or fov_max <= item <= Angle(np.radians(180)):
                 return True
             else:
                 return False
