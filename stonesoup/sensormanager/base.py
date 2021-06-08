@@ -80,7 +80,7 @@ class RandomSensorManager(SensorManager):
             action_generators = sensor.actions(timestamp)
             for action_gen in action_generators:
                 action_choices = list()
-                action_choices.append(np.random.choice(list(action_gen)))  # random.sample
+                action_choices.append(random.sample(list(action_gen), k=nchoose))  # random.sample
 
             sensor_action_assignment[sensor] = action_choices
 
