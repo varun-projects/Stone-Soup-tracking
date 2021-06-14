@@ -94,6 +94,7 @@
 # First a simulation must be set up using components from Stone Soup. For this the following imports are required.
 
 import numpy as np
+import random
 from datetime import datetime, timedelta
 
 start_time = datetime.now()
@@ -121,6 +122,7 @@ from stonesoup.types.detection import Detection
 # commenting out the first line in the next cell.
 
 np.random.seed(1991)
+random.seed(1991)
 
 # Generate transition model
 # i.e. fk(xk|xk-1)
@@ -156,36 +158,48 @@ plotter.ax.axis('auto')
 plotter.plot_ground_truths(truths_set, [0, 2])
 
 # %%
-# Create a measurement model
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Create sensors
+# ^^^^^^^^^^^^^^
 #
-# Assign a measurement model. This notebook explores the use of either the :class:`~.LinearGaussian` measurement model
-# or :class:`~.CartesianToBearingRange` measurement model. This is changed by setting `nonlinear_example`.
+# Create a sensor for each sensor management algorithm. This tutorial uses a specifically developed sensor
+# :class:`~SimpleRadar`. The sensor is capable of returning the actions it can possibly take at a given time step
+# and can be given an action to take.
 
-from stonesoup.models.measurement.linear import LinearGaussian
-from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
+# Generate sensors
+total_no_sensors = 1
 
-nonlinear_example = False  # Change to True for nonlinear demonstration
+from stonesoup.types.state import State
+from stonesoup.sensor.actionable import SimpleRadar
 
-# Generate measurement model
-# i.e. hk(zk|xk, ak)
-if nonlinear_example:
-    measurement_model = CartesianToBearingRange(
-        ndim_state=4,
-        mapping=(0, 2),
+sensor_setA = set()
+
+for n in range(0, total_no_sensors):
+    sensor = SimpleRadar(
+        position_mapping=(0, 2),
         noise_covar=np.array([[np.radians(0.5) ** 2, 0],
                               [0, 0.75 ** 2]]),
-        translation_offset=np.array([[10], [50]])  # Moves sensor location from default (origin)
-    )
-
-else:
-    measurement_model = LinearGaussian(
         ndim_state=4,
-        mapping=(0, 2),
-        noise_covar=np.array([[0.75, 0],
-                              [0, 0.75]])
+        position=np.array([[10], [n * 10 * 5]]),
+        rpm=60,
+        fov=np.radians(30),
+        dwell_centre=State([0.0], start_time)
     )
+    sensor_setA.add(sensor)
 
+sensor_setB = set()
+
+for n in range(0, total_no_sensors):
+    sensor = SimpleRadar(
+        position_mapping=(0, 2),
+        noise_covar=np.array([[np.radians(0.5) ** 2, 0],
+                              [0, 0.75 ** 2]]),
+        ndim_state=4,
+        position=np.array([[10], [n * 10 * 5]]),
+        rpm=60,
+        fov=np.radians(30),
+        dwell_centre=State([0.0], start_time)
+    )
+    sensor_setB.add(sensor)
 # %%
 # Create the Kalman predictor and updater
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -198,7 +212,8 @@ from stonesoup.predictor.kalman import KalmanPredictor
 predictor = KalmanPredictor(transition_model)
 
 from stonesoup.updater.kalman import ExtendedKalmanUpdater
-updater = ExtendedKalmanUpdater(measurement_model)
+updater = ExtendedKalmanUpdater(measurement_model=None)
+# measurement model is added to detections by the sensor
 
 # %%
 # Run the Kalman filters
@@ -250,11 +265,7 @@ for j, prior in enumerate(priors):
 # each time step.
 
 
-class RandomManager(Base):
-    action_list: list = Property(doc="List of possible actions")
-
-    def choose_actions(self):
-        return self.action_list[int(np.floor(len(self.action_list) * np.random.uniform()))]
+from stonesoup.sensormanager import RandomSensorManager
 
 # %%
 # UncertaintyManager class
@@ -289,49 +300,87 @@ class RandomManager(Base):
 # respectively. Note that :math:`\begin{Vmatrix}P_{k|k-1}\end{Vmatrix}` and :math:`\begin{Vmatrix}P_{k|k}\end{Vmatrix}`
 # represent the Frobenius norms of these covariance matrices.
 
+from stonesoup.sensormanager import BruteForceSensorManager
 
-class UncertaintyManager(Base):
-    action_list: list = Property(doc="List of possible actions")
-    predictor: KalmanPredictor = Property()
-    updater: ExtendedKalmanUpdater = Property()
+# %%
+# Create a reward function
 
-    def choose_actions(self, tracks_list, metric_time):
-        action_list_metric = self.reward_list(tracks_list, metric_time)
-        return self.action_list[np.argmax(action_list_metric)]
+## Reward function
+from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
+from stonesoup.functions import pol2cart
+from stonesoup.types.array import StateVector
 
-    def reward_list(self, tracks_list, metric_time):
-        metric_list = []
-        for track in tracks_list:
-            metric = self.calculate_reward(track, metric_time)
-            metric_list.append(metric)
-        return metric_list
 
-    def calculate_reward(self, track, metric_time):
-        # i.e. Rk(x, a)
+class RewardFunction(Base):
+    predictor: KalmanPredictor = Property(doc="Predictor used to predict the track to a new state")
+    updater: ExtendedKalmanUpdater = Property(doc="Updater used in the reward function to update "
+                                                  "the track to the new state.")
 
-        # Do the prediction and store covariance matrix
-        prediction = self.predictor.predict(track[-1],
-                                            timestamp=metric_time)
+    def calculate_reward(self, config, tracks_list, metric_time):
+        # should config always be sensors: tracks?
 
-        pred_cov_norm = np.linalg.norm(prediction.covar)
+        # Reward value
+        config_metric = 0
 
-        # Calculate predicted measurement
-        predicted_measurement = self.updater.predict_measurement(prediction)
+        # Create dictionary of predictions for the tracks in the configuration
+        predictions = {track: self.predictor.predict(track[-1],
+                                                     timestamp=metric_time)
+                       for track in tracks_list}
+        # Running updates
+        r_updates = dict()
 
-        # Generate detection from predicted measurement
-        detection = Detection(predicted_measurement.state_vector,
-                              timestamp=prediction.timestamp)
+        # For each sensor in the configuration
+        for sensor, actions in config.items():
 
-        # Generate hypothesis based on prediction and detection
-        hypothesis = SingleHypothesis(prediction, detection)
+            measurement_model = CartesianToBearingRange(
+                ndim_state=sensor.ndim_state,
+                mapping=sensor.position_mapping,
+                noise_covar=sensor.noise_covar,
+                translation_offset=sensor.position)
 
-        # Do the update based on this hypothesis and store covariance matrix
-        update = self.updater.update(hypothesis)
-        update_cov_norm = np.linalg.norm(update.covar)
+            # Provide the updater with the correct measurement model for the sensor
+            updater.measurement_model = measurement_model
 
-        # Calculate metric
-        metric = pred_cov_norm - update_cov_norm
-        return metric
+            for track in tracks_list:
+                predicted_measurement = self.updater.predict_measurement(predictions[track])
+                angle_to_target = predicted_measurement.state_vector[0]
+
+                for action in actions:
+                    if angle_to_target in action:
+
+                        # If the track is selected by a sensor for the first time 'previous' is the prediction
+                        # If the track has already been selected by a sensor 'previous' is the most recent update
+                        if track not in r_updates:
+                            previous = predictions[track]
+                        else:
+                            previous = r_updates[track]
+
+                        previous_cov_norm = np.linalg.norm(previous.covar)
+
+                        # Calculate predicted measurement
+                        predicted_measurement = self.updater.predict_measurement(previous)
+
+                        # Generate detection from predicted measurement
+                        detection = Detection(predicted_measurement.state_vector,
+                                              timestamp=metric_time)
+
+                        # Generate hypothesis based on prediction/previous update and detection
+                        hypothesis = SingleHypothesis(previous, detection)
+
+                        # Do the update based on this hypothesis and store covariance matrix
+                        update = self.updater.update(hypothesis)
+                        update_cov_norm = np.linalg.norm(update.covar)
+
+                        # Replace prediction in dictionary with update
+                        r_updates[track] = update
+
+                        # Calculate metric for the track observation and add to the metric for the configuration
+                        metric = previous_cov_norm - update_cov_norm
+                        config_metric += metric
+
+        # Return value of configuration metric
+        return config_metric
+
 
 # %%
 # Create an instance of the sensor manager
@@ -341,10 +390,13 @@ class UncertaintyManager(Base):
 # to select from. Here this is the possible target numbers the manager can choose to observe. The
 # :class:`UncertaintyManager` also requires a predictor and an updater.
 
-actions = range(0, ntruths)
+randomactionmanager = RandomSensorManager(sensor_setA)
 
-randommanager = RandomManager(actions)
-uncertaintymanager = UncertaintyManager(actions, predictor, updater)
+# initiate reward function
+reward_function = RewardFunction(predictor, updater)
+
+uncertaintymanager = BruteForceSensorManager(sensor_setB,
+                                             reward_function=reward_function.calculate_reward)
 
 # %%
 # Run the sensor managers
@@ -364,48 +416,68 @@ uncertaintymanager = UncertaintyManager(actions, predictor, updater)
 # Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
 # :class:`RandomManager`.
 
-# Generate list of time steps from ground truth timestamps
+from stonesoup.hypothesiser.distance import DistanceHypothesiser
+from stonesoup.measures import Mahalanobis
+hypothesiser = DistanceHypothesiser(predictor, updater, measure=Mahalanobis(), missed_distance=5)
+
+from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
+data_associator = GNNWith2DAssignment(hypothesiser)
+
+# %%
+
+# Generate list of timesteps from ground truth timestamps
 timesteps = []
 for state in truths[0]:
     timesteps.append(state.timestamp)
 
-predictionsA = []
-measurementsA = []
-
 for timestep in timesteps[1:]:
 
-    # Activate the sensor manager and make a measurement
-    chosen_target = randommanager.choose_actions()
+    # Generate chosen configuration
+    chosen_action = randomactionmanager.choose_actions(timestep)
 
-    # The ground truth will therefore be:
-    selected_truth = truths[chosen_target][timestep]
+    # Create empty dictionary for measurements
+    measurementsA = []
 
-    # Observe this
-    measurement = measurement_model.function(selected_truth, noise=True)
-    measurementsA.append(Detection(measurement,
-                                   timestamp=selected_truth.timestamp))
+    for sensor, actions in chosen_action.items():
+        sensor.add_actions(actions)
+    #         print(np.rad2deg(action.value))
 
-    # Do the prediction (for all targets) and the update for those
-    for target_id, track in enumerate(tracksA):
-        prediction = predictor.predict(track[-1],
-                                       timestamp=measurementsA[-1].timestamp)
+    for sensor in sensor_setA:
+        sensor.act(timestep)
 
-        if target_id == chosen_target:  # Update the prediction       
-            # Association - just a single hypothesis at present
-            hypothesis = SingleHypothesis(prediction, measurementsA[-1])  # Group a prediction and measurement
+        # Observe this ground truth
+        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurementsA.extend(measurements)
 
-            # Update and add to track
+        # Generate clutter at this time-step
+        # Skipped for now
+
+    hypotheses = data_associator.associate(tracksA,
+                                           measurementsA,
+                                           timestep)
+    for track in tracksA:
+        hypothesis = hypotheses[track]
+        if hypothesis.measurement:
             post = updater.update(hypothesis)
-        else:
-            post = prediction
-
-        track.append(post)
+            track.append(post)
+        else:  # When data associator says no detections are good enough, we'll keep the prediction
+            track.append(hypothesis.prediction)
 
 # %%
 # Plot ground truths, tracks and uncertainty ellipses for each target. 
 
+from matplotlib.lines import Line2D
+from stonesoup.plotter import Plotter
+
 plotterA = Plotter()
 plotterA.ax.axis('auto')
+
+# Plot sensor positions as black x markers
+for sensor in sensor_setA:
+    plotterA.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
+plotterA.labels_list.append('Sensor')
+plotterA.handles_list.append(Line2D([], [], linestyle='', marker='x', c='black'))
+
 plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
@@ -431,46 +503,53 @@ plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 # The prediction for each target is appended to the tracks list at each time step, except for the chosen target for
 # which an update is appended.
 
-predictionsB = []
-measurementsB = []
-
 for timestep in timesteps[1:]:
 
-    # Activate the sensor manager and choose a target to observe
-    # i.e. {a}k 
-    chosen_target = uncertaintymanager.choose_actions(tracksB, timestep)
+    # Generate chosen configuration
+    chosen_actions = uncertaintymanager.choose_actions(tracksB, timestep)
 
-    # The ground truth will therefore be:
-    selected_truth = truths[chosen_target][timestep]
+    # Create empty dictionary for measurements
+    measurementsB = []
 
-    # Observe this
-    # i.e. {z}k
-    measurement = measurement_model.function(selected_truth, noise=True)
-    measurementsB.append(Detection(measurement,
-                                   timestamp=selected_truth.timestamp))
+    for chosen_action in chosen_actions:
+        for sensor, actions in chosen_action.items():
+            sensor.add_actions(actions)
+    #             print('chosen angle:', np.rad2deg(actions[0].value))
 
-    # Do the prediction (for all targets) and the update for those
-    for target_id, track in enumerate(tracksB):
-        # Do the prediction
-        # i.e. {x}k
-        prediction = predictor.predict(track[-1], timestamp=measurementsB[-1].timestamp)
+    for sensor in sensor_setB:
+        sensor.act(timestep)
 
-        if target_id == chosen_target:  # Update the prediction       
-            # Association - just a single hypothesis at present
-            hypothesis = SingleHypothesis(prediction, measurementsB[-1])  # Group a prediction and measurement
+        # Observe this ground truth
+        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurementsB.extend(measurements)
 
-            # Update and add to track
+        # Generate clutter at this time-step
+        # Skipped for now
+
+    hypotheses = data_associator.associate(tracksB,
+                                           measurementsB,
+                                           timestep)
+    for track in tracksB:
+        hypothesis = hypotheses[track]
+        if hypothesis.measurement:
             post = updater.update(hypothesis)
-        else:
-            post = prediction
-
-        track.append(post)
+            track.append(post)
+        else:  # When data associator says no detections are good enough, we'll keep the prediction
+            track.append(hypothesis.prediction)
 
 # %%
 # Plot ground truths, tracks and uncertainty ellipses for each target.
 
 plotterB = Plotter()
 plotterB.ax.axis('auto')
+
+# Plot sensor positions as black x markers
+for sensor in sensor_setB:
+    plotterB.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
+# Add to legend generated
+plotterB.labels_list.append('Sensor')
+plotterB.handles_list.append(Line2D([], [], linestyle='', marker='x', c='black'))
+
 plotterB.plot_ground_truths(truths_set, [0, 2])
 plotterB.plot_tracks(set(tracksB), [0, 2], uncertainty=True)
 
