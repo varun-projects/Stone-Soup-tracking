@@ -16,18 +16,20 @@
 #
 # Introducing multiple sensors
 # ----------------------------
-# The example in this tutorial considers two simple sensor management methods and applies them to the
-# same set of ground truths in order to observe the difference in tracks. The scenario simulates 12
-# targets moving on nearly constant velocity trajectories and an adjustable number of sensors. Each
-# sensor can only observe one target each at each time step but a target may be observed by more than one sensor.
+# The example in this tutorial considers the same sensor management methods as in Tutorial 1 and applies them to the
+# same set of ground truths in order to observe the difference in tracks. The scenario simulates 10
+# targets moving on nearly constant velocity trajectories and in this case an adjustable number of sensors.
+# The sensors are
+# simple radar with a defined field of view which can be pointed in a particular direction in order
+# to make an observation.
 #
-# The first method, "RandomManager" chooses a target for each sensor to observe randomly with equal probability.
+# The first method, "RandomSensorManager" chooses a target for each sensor to observe randomly with equal probability.
 #
-# The second method, "UncertaintyManager" aims to reduce the total uncertainty of the track estimates at each
-# time step. To achieve this the sensor manager considers all possible combinations of target observations for
-# the given number of sensors. The sensor manager chooses the configuration for which the sum of estimated
+# The second method, "BruteForceSensorManager" aims to reduce the total uncertainty of the track estimates at each
+# time step. To achieve this the sensor manager considers all possible configurations of directions for the sensors
+# to point in. The sensor manager chooses the configuration for which the sum of estimated
 # uncertainties (as represented by the Frobenius norm of the covariance matrix) can be reduced the most by observing
-# the chosen targets.
+# the targets in the chosen direction.
 #
 # The introduction of multiple sensors means an increase in the possible combinations of target observations
 # that the UncertaintyManager must consider. This brute force optimisation method of looking at every possible
@@ -47,6 +49,7 @@
 # First a simulation must be set up using components from Stone Soup. For this the following imports are required.
 
 import numpy as np
+import random
 from datetime import datetime, timedelta
 
 start_time = datetime.now()
@@ -59,12 +62,12 @@ from stonesoup.types.hypothesis import SingleHypothesis
 from stonesoup.types.detection import Detection
 
 # %%
-# Generate ground truth
-# ^^^^^^^^^^^^^^^^^^^^^
+# Generate ground truths
+# ^^^^^^^^^^^^^^^^^^^^^^
 #
 # Generate transition model and ground truths as in Tutorial 1.
 #
-# The number of targets in this simulation is defined by `n_truths` - here there are 12 targets. The time the
+# The number of targets in this simulation is defined by `n_truths` - here there are 10 targets. The time the
 # simulation is observed for is defined by `time_max`.
 #
 # We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
@@ -72,13 +75,15 @@ from stonesoup.types.detection import Detection
 
 np.random.seed(1991)
 
+random.seed(1991)
+
 # Generate transition model
 transition_model = CombinedLinearGaussianTransitionModel([ConstantVelocity(0.005),
                                                           ConstantVelocity(0.005)])
 
 yps = range(0, 120, 10)  # y value for prior state
 truths = []
-ntruths = 12  # number of ground truths in simulation
+ntruths = 10  # number of ground truths in simulation
 time_max = 100  # timestamps the simulation is observed over
 
 # Generate ground truths
@@ -107,31 +112,52 @@ plotter.plot_ground_truths(truths_set, [0, 2])
 # %%
 # Create sensors
 # ^^^^^^^^^^^^^^
-# Create a set of sensors. This notebook explores the use of the :class:`~.RadarBearingRange` sensor with the
-# number of sensors initially set as 3. Each sensor is positioned along the line :math:`x=10`, at distance
-# intervals of 10.
+# Create a set of sensors for each sensor management algorithm. As in Tutorial 1 this tutorial uses the
+# :class:`~.SimpleRadar` sensor with the
+# number of sensors initially set as 2. Each sensor is positioned along the line :math:`x=10`, at distance
+# intervals of 50.
 #
-# Increasing the number of sensors above 3 significantly increases the run time of the sensor manager due to the
-# increase in combinations to be considered by the :class:`UncertaintyManager`. This is discussed further later.
+# Increasing the number of sensors above 2 significantly increases the run time of the sensor manager due to the
+# increase in combinations to be considered by the :class:`~.BruteForceSensorManager`. This is discussed further later.
 
-total_no_sensors = 3
+total_no_sensors = 2
 
-from stonesoup.sensor.radar.radar import RadarBearingRange
+from stonesoup.types.state import State
+from stonesoup.sensor.actionable import SimpleRadar
 
-sensor_set = set()
+sensor_setA = set()
 
 for n in range(0, total_no_sensors):
-    sensor = RadarBearingRange(position_mapping=(0, 2),
-                               noise_covar=np.array([[np.radians(0.5)**2, 0],
-                                                    [0, 0.75**2]]),
-                               ndim_state=4,
-                               position=np.array([[10], [n*10]])
-                               )
-    sensor_set.add(sensor)
+    sensor = SimpleRadar(
+        position_mapping=(0, 2),
+        noise_covar=np.array([[np.radians(0.5) ** 2, 0],
+                              [0, 0.75 ** 2]]),
+        ndim_state=4,
+        position=np.array([[10], [n * 50]]),
+        rpm=60,
+        fov=np.radians(30),
+        dwell_centre=State([0.0], start_time)
+    )
+    sensor_setA.add(sensor)
+
+sensor_setB = set()
+
+for n in range(0, total_no_sensors):
+    sensor = SimpleRadar(
+        position_mapping=(0, 2),
+        noise_covar=np.array([[np.radians(0.5) ** 2, 0],
+                              [0, 0.75 ** 2]]),
+        ndim_state=4,
+        position=np.array([[10], [n * 50]]),
+        rpm=60,
+        fov=np.radians(30),
+        dwell_centre=State([0.0], start_time)
+    )
+    sensor_setB.add(sensor)
 
 # %%
 # Create the Kalman predictor and updater
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
 # Construct a predictor and updater using the :class:`~.KalmanPredictor` and :class:`~.ExtendedKalmanUpdater`
 # components from Stone Soup. The measurement model for the updater is `None` as it is an attribute of the sensor.
@@ -162,181 +188,173 @@ for j in range(0, ntruths):
 
 from stonesoup.types.track import Track
 
-# Initialise tracks from the RandomManager
+# Initialise tracks from the RandomSensorManager
 tracksA = []
 for j, prior in enumerate(priors):
     tracksA.append(Track([prior], id=f"id{j}"))
 
-# Initialise tracks from the UncertaintyManager
+# Initialise tracks from the BruteForceSensorManager
 tracksB = []
 for j, prior in enumerate(priors):
     tracksB.append(Track([prior], id=f"id{j}"))
 
 # %%
-# Create sensor management classes
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Create sensor managers
+# ^^^^^^^^^^^^^^^^^^^^^^
 #
-# Next we create our sensor management classes. As is Tutorial 1 two sensor manager classes are built -
-# :class:`RandomManager` and :class:`UncertaintyManager`.
+# Next we create our sensor management classes. As is Tutorial 1 two sensor manager classes are used -
+# :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager`.
 #
-# RandomManager class
-# """""""""""""""""""
+# Random sensor manager
+# """""""""""""""""""""
 #
-# The first method :class:`RandomManager` chooses a target to observe randomly. To do this the
-# :meth:`choose_actions` function uses :meth:`random.choice()` to choose a track from `tracks_list` for each
-# sensor to observe. It returns the chosen configuration of sensors and tracks to be observed as a mapping.
+# The first method :class:`~.RandomSensorManager` chooses a target to observe randomly. To do this the
+# :meth:`choose_actions` function uses :meth:`random.choice()` to choose a direction for each
+# sensor to observe from the possible actions it can take. It returns the chosen configuration of sensors and
+# actions to be taken as a mapping.
 
-
-class RandomManager(Base):
-
-    sensor_set: set = Property(doc="Set of sensors in use")
-
-    def choose_actions(self, tracks_list, metric_time):
-        config = dict()
-        trackIDs = [track.id for track in tracks_list]
-
-        # For each sensor, randomly select a track to be observed
-        for sensor in self.sensor_set:
-            trackID = np.random.choice(trackIDs)
-            for track in tracks_list:
-                if track.id == trackID:
-                    config[sensor] = track
-
-        # Return dictionary of sensors and tracks to be observed
-        return config
+from stonesoup.sensormanager import RandomSensorManager
 
 # %%
-# UncertaintyManager class
-# """"""""""""""""""""""""
+# Brute force sensor manager
+# """"""""""""""""""""""""""
 #
-# The second method :class:`UncertaintyManager` chooses the target observation configuration which results
+# The second method :class:`~.BruteForceSensorManager` chooses the configuration of sensors and actions which results
 # in the largest difference between the uncertainty covariances of the target predictions and posteriors
 # assuming a predicted measurement corresponding to that prediction. This means the sensor manager chooses
-# to observe the targets such that the uncertainty will be reduced the most by making the chosen observations.
-#
-# For a given configuration of sensors and tracks to observe the :meth:`calculate_reward` function calculates the
-# difference between the covariance matrix norms of the prediction and the posterior assuming a predicted
-# measurement corresponding to that prediction. The sum of these differences is returned as a metric for
-# that observation configuration.
-#
-# The :meth:`choose_actions` function selects the configuration with the maximum value for the metric generated
-# by :meth:`calculate_reward`. This identifies the choice of track observations which results in the greatest
-# reduction in uncertainty and returns the configuration of sensors and tracks to be observed as a mapping.
+# to point the sensors in directions such that the uncertainty will be reduced the most by
+# making observations in those directions. This is evaluated by the reward function.
 
+from stonesoup.sensormanager import BruteForceSensorManager
 
-import itertools as it
-from functools import partial
+# %%
+# Reward function
+# """""""""""""""
+# The :class:`RewardFunction` calculates the uncertainty reduction by computing the difference between the
+# covariance matrix norms of the
+# prediction and the posterior assuming a predicted measurement corresponding to that prediction. The sum
+# of these differences is returned as a metric for that configuration.
+
 from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
 
 
-class UncertaintyManager(Base):
+class RewardFunction(Base):
+    predictor: KalmanPredictor = Property(doc="Predictor used to predict the track to a new state")
+    updater: ExtendedKalmanUpdater = Property(doc="Updater used in the reward function to update "
+                                                  "the track to the new state.")
 
-    sensor_set: set = Property(doc="Set of sensors in use")
-    predictor: KalmanPredictor = Property()
-    updater: ExtendedKalmanUpdater = Property()
+    def calculate_reward(self, config, tracks_list, metric_time):
+        # should config always be sensors: tracks?
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Sensors must have a fixed order within the manager
-        self.sensor_list = list(sensor_set)
-
-        # Generate a dictionary measurement models for each sensor (for use before any measurements have been made)
-        self.measurement_models = dict()
-        for sensor in self.sensor_list:
-            measurement_model = CartesianToBearingRange(
-                ndim_state=4,
-                mapping=(0, 2),
-                noise_covar=sensor.noise_covar,
-                translation_offset=sensor.position)
-            self.measurement_models[sensor] = measurement_model
-
-    def choose_actions(self, tracks_list, metric_time):
-        # Generate a tuple of dictionaries where the dictionaries are potential sensor/track observation configurations
-        possible_configs = ({sensor: track
-                             for sensor, track in zip(self.sensor_list, config)}
-                            for config in it.product(tracks_list,
-                                                     repeat=len(self.sensor_list)))
-
-        # Select the configuration which gives the maximum reward at the given time
-        config = max(possible_configs, key=partial(self.calculate_reward,
-                                                   metric_time=metric_time))
-
-        # Return selected configuration as a dictionary of sensors and tracks to be observed
-        return config
-
-    def calculate_reward(self, config, metric_time):
+        # Reward value
         config_metric = 0
 
         # Create dictionary of predictions for the tracks in the configuration
-        predictions_updates = {track: self.predictor.predict(track[-1],
-                                                             timestamp=metric_time)
-                               for track in config.values()}
+        predictions = {track: self.predictor.predict(track[-1],
+                                                     timestamp=metric_time)
+                       for track in tracks_list}
+        # Running updates
+        r_updates = dict()
 
         # For each sensor in the configuration
-        for sensor, track in config.items():
+        for sensor, actions in config.items():
+
+            measurement_model = CartesianToBearingRange(
+                ndim_state=sensor.ndim_state,
+                mapping=sensor.position_mapping,
+                noise_covar=sensor.noise_covar,
+                translation_offset=sensor.position)
+
             # Provide the updater with the correct measurement model for the sensor
-            self.updater.measurement_model = self.measurement_models[sensor]
+            self.updater.measurement_model = measurement_model
 
-            # If the track is selected by a sensor for the first time 'previous' is the prediction
-            # If the track has already been selected by a sensor 'previous' is the most recent update
-            previous = predictions_updates[track]
-            previous_cov_norm = np.linalg.norm(previous.covar)
+            for track in tracks_list:
+                predicted_measurement = self.updater.predict_measurement(predictions[track])
+                angle_to_target = predicted_measurement.state_vector[0]
 
-            # Calculate predicted measurement
-            predicted_measurement = self.updater.predict_measurement(previous)
+                for action in actions:
+                    if angle_to_target in action:
+                        # If the track is selected by a sensor for the first time 'previous' is the prediction
+                        # If the track has already been selected by a sensor 'previous' is the most recent update
+                        if track not in r_updates:
+                            previous = predictions[track]
+                        else:
+                            previous = r_updates[track]
 
-            # Generate detection from predicted measurement
-            detection = Detection(predicted_measurement.state_vector,
-                                  timestamp=metric_time)
+                        previous_cov_norm = np.linalg.norm(previous.covar)
 
-            # Generate hypothesis based on prediction/previous update and detection
-            hypothesis = SingleHypothesis(previous, detection)
+                        # Calculate predicted measurement
+                        predicted_measurement = self.updater.predict_measurement(previous)
 
-            # Do the update based on this hypothesis and store covariance matrix
-            update = self.updater.update(hypothesis)
-            update_cov_norm = np.linalg.norm(update.covar)
+                        # Generate detection from predicted measurement
+                        detection = Detection(predicted_measurement.state_vector,
+                                              timestamp=metric_time)
 
-            # Replace prediction in dictionary with update
-            predictions_updates[track] = update
+                        # Generate hypothesis based on prediction/previous update and detection
+                        hypothesis = SingleHypothesis(previous, detection)
 
-            # Calculate metric for the track observation and add to the metric for the configuration
-            metric = previous_cov_norm - update_cov_norm
-            config_metric = config_metric + metric
+                        # Do the update based on this hypothesis and store covariance matrix
+                        update = self.updater.update(hypothesis)
+                        update_cov_norm = np.linalg.norm(update.covar)
+
+                        # Replace prediction in dictionary with update
+                        r_updates[track] = update
+
+                        # Calculate metric for the track observation and add to the metric for the configuration
+                        metric = previous_cov_norm - update_cov_norm
+                        config_metric += metric
 
         # Return value of configuration metric
         return config_metric
 
 # %%
-# Create an instance of the sensor manager
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Initiate sensor managers
+# ^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# Create an instance of each sensor manager class. Both sensor managers take in the `sensor_set`.
-# The :class:`UncertaintyManager` also requires a predictor and an updater.
+# Create an instance of each sensor manager class. Both sensor managers take in a `sensor_set`.
+# The :class:`~.BruteForceSensorManager` also requires a callable reward function which is initiated here
+# from the :class:`RewardFunction` created above.
 
 
-randommanager = RandomManager(sensor_set)
+randomsensormanager = RandomSensorManager(sensor_setA)
 
-uncertaintymanager = UncertaintyManager(sensor_set, predictor, updater)
+# initiate reward function
+reward_function = RewardFunction(predictor, updater)
+
+bruteforcesensormanager = BruteForceSensorManager(sensor_setB,
+                                                  reward_function=reward_function.calculate_reward)
 
 # %%
 # Run the sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^^
 #
-# Both sensor management methods require a list of tracks and a timestamp at each time step when calling
-# the function :meth:`choose_actions`. This returns a mapping of sensors and tracks to be observed by each
+# Both sensor management methods require a timestamp at each time step when calling
+# the function :meth:`choose_actions` and the :class:`~.BruteForceSensorManager` also requires a list of tracks
+# in order to evaluate the reward function. This returns a mapping of sensors and actions to be taken by each
 # sensor, decided by the sensor managers.
 #
-# For both sensor management methods, at each time step a prediction is made for each of the targets except the
-# chosen targets, which are updated. These states are appended to the tracks list.
+# For both sensor management methods, at each time step the chosen action is given to the sensors and then
+# measurements taken. The tracks are updated based on these measurements with predictions made for tracks
+# which have not been observed.
 #
 # The ground truths, tracks and uncertainty ellipses are then plotted.
 #
-# RandomManager
-# """""""""""""
+# Run random sensor manager
+# """""""""""""""""""""""""
 #
 # Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
-# :class:`RandomManager`. This returns a mapping of sensors to tracks where tracks are selected randomly.
+# :class:`~.RandomSensorManager`. This returns a mapping of sensors to actions where actions are a direction for
+# the sensor to point in, selected randomly.
+
+from stonesoup.hypothesiser.distance import DistanceHypothesiser
+from stonesoup.measures import Mahalanobis
+hypothesiser = DistanceHypothesiser(predictor, updater, measure=Mahalanobis(), missed_distance=5)
+
+from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
+data_associator = GNNWith2DAssignment(hypothesiser)
+
+# %%
+#
 
 from collections import defaultdict
 
@@ -348,40 +366,34 @@ for state in truths[0]:
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
-    chosen_action = randommanager.choose_actions(tracksA, timestep)
+    chosen_action = randomsensormanager.choose_actions(timestep)
 
-    # Create empty dictionary for lists of measurements
-    measurementsA = defaultdict(list)
+    # Create empty dictionary for measurements
+    measurementsA = []
 
-    for sensor, track in chosen_action.items():
+    for sensor, actions in chosen_action.items():
+        sensor.add_actions(actions)
 
-        # The selected ground truth will be:
-        for truth in truths:
-            if truth.id == track.id:
-                selected_truth = truth[timestep]
-                break
-        else:
-            raise ValueError()
+    for sensor in sensor_setA:
+        sensor.act(timestep)
 
         # Observe this ground truth
-        measurement = sensor.measure([selected_truth], noise=True)
-        measurementsA[track].append(measurement.pop())
+        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurementsA.extend(measurements)
 
-    # Do the prediction (for all targets) and the update for those observed
+        # Generate clutter at this time-step
+        # Skipped for now
+
+    hypotheses = data_associator.associate(tracksA,
+                                           measurementsA,
+                                           timestep)
     for track in tracksA:
-        # Do the prediction
-        new_state = predictor.predict(track[-1],
-                                      timestamp=timestep)
-
-        for measurement in measurementsA[track]:  # Update the prediction
-            # Association - just a single hypothesis at present
-            hypothesis = SingleHypothesis(new_state,
-                                          measurement)  # Group a prediction and measurement
-
-            # Update and add to track
-            new_state = updater.update(hypothesis)
-
-        track.append(new_state)
+        hypothesis = hypotheses[track]
+        if hypothesis.measurement:
+            post = updater.update(hypothesis)
+            track.append(post)
+        else:  # When data associator says no detections are good enough, we'll keep the prediction
+            track.append(hypothesis.prediction)
 
 # %%
 # Plot ground truths, tracks and uncertainty ellipses for each target. The positions of the sensors are indicated
@@ -393,7 +405,7 @@ plotterA = Plotter()
 plotterA.ax.axis('auto')
 
 # Plot sensor positions as black x markers
-for sensor in sensor_set:
+for sensor in sensor_setA:
     plotterA.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
 plotterA.labels_list.append('Sensor')
 plotterA.handles_list.append(Line2D([], [], linestyle='', marker='x', c='black'))
@@ -402,74 +414,70 @@ plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
 # %%
-# In comparison to Tutorial 1 the performance of the :class:`RandomManager` has improved greatly. This is
+# In comparison to Tutorial 1 the performance of the :class:`~.RandomSensorManager` has improved greatly. This is
 # because a greater number of sensors means each target is more likely to be observed. This means the uncertainty
 # of the track does not increase as much because the targets are observed more often.
 
 # %%
-# UncertaintyManager
-# """"""""""""""""""
+# Run brute force sensor manager
+# """"""""""""""""""""""""""""""
 #
-# Here the chosen target for observation is selected based on the difference between the covariance matrices of the
+# Here the direction for observation is selected based on the difference between the covariance matrices of the
 # prediction and the update of predicted measurement.
 #
-# First a list is created of all possible sensor/track configurations. Each possible configuration is a mapping
+# First a list is created of all possible sensor/action configurations. Each possible configuration is a mapping
 # of sensors to tracks.
 #
-# At each time step, for each target in each configuration:
+# At each time step, for each track in the tracks list:
 #
 # * A prediction is made and the covariance matrix norms stored
-# * A predicted measurement is made
+# * The angle from the sensor to the prediction is calculated to establish if it within the field of view
+# * If it is in the field of view a predicted measurement is made
 # * A synthetic detection is generated from this predicted measurement
 # * A hypothesis generated based on the detection and prediction
 # * This hypothesis is used to do an update and the covariance matrix norms of the update are stored.
 #
 # The metric `config_metric` is calculated as the sum of the differences between these covariance matrix norms
-# for the tracks in the possible configuration.
+# for the tracks observed by the possible action configuration. The sensor manager identifies the
+# configuration which results in the largest value of this metric and therefore
+# largest reduction in uncertainty. It returns the optimum sensor/action configuration as a dictionary.
 #
-# The sensor manager identifies the configuration which results in the largest value of this metric and therefore
-# largest reduction in uncertainty. It returns the optimum sensor/track configuration as a dictionary.
-#
-# The prediction for each track is appended to the tracks list at each time step, except for the observed
-# tracks for which an update is appended using the selected sensor(s).
+# The actions are given to the sensors and measurements made and
+# the tracks are updated based on these measurements, with predictions made for tracks
+# which have not been observed by the sensors.
 
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
-    chosen_action = uncertaintymanager.choose_actions(tracksB, timestep)
+    chosen_actions = bruteforcesensormanager.choose_actions(tracksB, timestep)
 
-    # Create empty dictionary for lists of measurements
-    measurementsB = defaultdict(list)
+    # Create empty dictionary for measurements
+    measurementsB = []
 
-    for sensor, track in chosen_action.items():
+    for chosen_action in chosen_actions:
+        for sensor, actions in chosen_action.items():
+            sensor.add_actions(actions)
 
-        # The selected ground truth will be:
-        for truth in truths:
-            if truth.id == track.id:
-                selected_truth = truth[timestep]
-                break
-        else:
-            raise ValueError()
+    for sensor in sensor_setB:
+        sensor.act(timestep)
 
         # Observe this ground truth
-        measurement = sensor.measure([selected_truth], noise=True)
-        measurementsB[track].append(measurement.pop())
+        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurementsB.extend(measurements)
 
-    # Do the prediction (for all targets) and the update for those observed
+        # Generate clutter at this time-step
+        # Skipped for now
+
+    hypotheses = data_associator.associate(tracksB,
+                                           measurementsB,
+                                           timestep)
     for track in tracksB:
-        # Do the prediction
-        new_state = predictor.predict(track[-1],
-                                      timestamp=timestep)
-
-        for measurement in measurementsB[track]:  # Update the prediction
-            # Association - just a single hypothesis at present
-            hypothesis = SingleHypothesis(new_state,
-                                          measurement)  # Group a prediction and measurement
-
-            # Update and add to track
-            new_state = updater.update(hypothesis)
-
-        track.append(new_state)
+        hypothesis = hypotheses[track]
+        if hypothesis.measurement:
+            post = updater.update(hypothesis)
+            track.append(post)
+        else:  # When data associator says no detections are good enough, we'll keep the prediction
+            track.append(hypothesis.prediction)
 
 # %%
 # Plot ground truths, tracks and uncertainty ellipses for each target.
@@ -478,7 +486,7 @@ plotterB = Plotter()
 plotterB.ax.axis('auto')
 
 # Plot sensor positions as black x markers
-for sensor in sensor_set:
+for sensor in sensor_setB:
     plotterB.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
 # Add to legend generated
 plotterB.labels_list.append('Sensor')
@@ -488,24 +496,25 @@ plotterB.plot_ground_truths(truths_set, [0, 2])
 plotterB.plot_tracks(set(tracksB), [0, 2], uncertainty=True)
 
 # %%
-# The smaller uncertainty ellipses in this plot suggest that the :class:`UncertaintyManager` provides a much
-# better track than the :class:`RandomManager`. As with the :class:`RandomManager`, performance has improved from
+# The smaller uncertainty ellipses in this plot suggest that the :class:`~.BruteForceSensorManager` provides a much
+# better track than the :class:`~.RandomSensorManager`. As with the :class:`~.RandomSensorManager`,
+# performance has improved from
 # Tutorial 1 due to the additional sensors.
 
 # %%
 # Combinatorics
-# ^^^^^^^^^^^^^
+# -------------
 #
 # The following graph demonstrates how the number of possible configurations increases with the number
 # of sensors and number of targets. The number of configurations which are considered by the sensor manager
 # for :math:`M` targets and :math:`N` sensors is :math:`M^N`.
 #
-# In this example there are 12 targets so the number of possible configurations should be :math:`12^N`
+# In this example there are 10 targets so the number of possible configurations should be :math:`10^N`
 # where :math:`N` is the number of sensors. This exponential increase means that as larger number of
 # sensors slows down the run time of the sensor manager significantly because there are so many more iterations
 # to consider.
 #
-# Changing the number of sensors to :math:`N\geq 4` leads to a much longer run time.
+# Changing the number of sensors to :math:`N\geq 3` leads to a much longer run time.
 # This highlights a practical limitation of using this brute force optimisation method for multiple
 # sensors.
 
@@ -577,20 +586,19 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.plot([i.timestamp for i in ospa_metricA.value],
         [i.value for i in ospa_metricA.value],
-        label='RandomManager')
+        label='RandomSensorManager')
 ax.plot([i.timestamp for i in ospa_metricB.value],
         [i.value for i in ospa_metricB.value],
-        label='UncertaintyManager')
+        label='BruteForceSensorManager')
 ax.set_ylabel("OSPA distance")
 ax.set_xlabel("Time")
 ax.legend()
 
 # %%
-# OSPA distance starts large due to the position offset in the priors and then improves for both scenarios as
-# observations are made. The :class:`UncertaintyManager` generally results in a smaller OSPA distance than the random
-# observations of the :class:`RandomManager`.
+# The OSPA distance for the :class:`~.BruteForceSensorManager` is generally smaller than for the random
+# observations of the :class:`~.RandomSensorManager`.
 #
-# A larger number of sensors results in improved performance for the :class:`RandomManager`, in comparison to
+# A larger number of sensors results in improved performance for the :class:`~.RandomSensorManager`, in comparison to
 # Tutorial 1 where there is only one sensor. This is due to the increased likelihood of each target being
 # observed randomly.
 #
@@ -622,30 +630,19 @@ times = metric_managerB.list_timestamps()
 
 axes[0].set(title='Positional Accuracy', xlabel='Time', ylabel='PA')
 axes[0].plot(times, [metric.value for metric in pa_metricA.value],
-             label='RandomManager')
+             label='RandomSensorManager')
 axes[0].plot(times, [metric.value for metric in pa_metricB.value],
-             label='UncertaintyManager')
+             label='BruteForceSensorManager')
 axes[0].legend()
 
 axes[1].set(title='Velocity Accuracy', xlabel='Time', ylabel='VA')
 axes[1].plot(times, [metric.value for metric in va_metricA.value],
-             label='RandomManager')
+             label='RandomSensorManager')
 axes[1].plot(times, [metric.value for metric in va_metricB.value],
-             label='UncertaintyManager')
+             label='BruteForceSensorManager')
 axes[1].legend()
 
 # %%
-# Similar to the OSPA distances, positional accuracy starts as quite poor for both scenarios due to the offset in the
-# priors, and then improves over time as observations are made. Again the :class:`UncertaintyManager`
-# generally results in a better positional accuracy than the random observations of the :class:`RandomManager`.
-#
-# Velocity accuracy also starts quite poor due to an error in the priors. It improves over time as more observations
-# are made, then remains relatively similar for each sensor manager. This is because the velocity remains nearly
-# constant throughout the simulation. This is not likely to be the case in a real-world scenario.
-#
-# As with the OSPA metric the larger number of sensors generally results in improved performance
-# for the :class:`RandomManager` in comparison to Tutorial 1. This is due to the increased likelihood of
-# each target being observed randomly.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -660,10 +657,10 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.plot([i.timestamp for i in uncertainty_metricA.value],
         [i.value for i in uncertainty_metricA.value],
-        label='RandomManager')
+        label='RandomSensorManager')
 ax.plot([i.timestamp for i in uncertainty_metricB.value],
         [i.value for i in uncertainty_metricB.value],
-        label='UncertaintyManager')
+        label='BruteForceSensorManager')
 ax.set_ylabel("Sum of covariance matrix norms")
 ax.set_xlabel("Time")
 ax.legend()
@@ -671,19 +668,14 @@ ax.legend()
 # sphinx_gallery_thumbnail_number = 7
 
 # %%
-# This metric shows that the uncertainty in the tracks generated by the :class:`RandomManager` is much greater
-# than for those generated by the :class:`UncertaintyManager`. This is also reflected by the uncertainty ellipses
+# This metric shows that the uncertainty in the tracks generated by the :class:`~.RandomSensorManager` is much greater
+# than for those generated by the :class:`~.BruteForceSensorManager`. This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
 #
-# The uncertainty for the :class:`UncertaintyManager` starts poor and then improves initially as
+# The uncertainty for the :class:`~.BruteForceSensorManager` starts poor and then improves initially as
 # observations are made. This initial uncertainty is because the priors given are not correct. The uncertainty
-# then increases slowly over time. This is likely because the targets are moving further away from the
-# :class:`~.RadarBearingRange` sensors so the uncertainty in the observations made increases.
-#
-# There appears to be a periodicity in the uncertainty metric for the :class:`UncertaintyManager`. This is due to
-# the fact that this simulation is quite clean and the uncertainty of each track increases by the same amount if
-# left unobserved. Since the sensor manager is then making observations based on this uncertainty, it rotates
-# through observing each of the targets in the same order creating this pattern.
+# appears to increase slowly over time. This is likely because the targets are moving further away from the
+# :class:`~.SimpleRadar` sensors so the uncertainty in the observations made increases.
 
 # %%
 # References
