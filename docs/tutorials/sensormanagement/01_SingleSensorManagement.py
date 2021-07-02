@@ -110,8 +110,8 @@ from stonesoup.types.hypothesis import SingleHypothesis
 from stonesoup.types.detection import Detection
 
 # %%
-# Generate ground truth
-# ^^^^^^^^^^^^^^^^^^^^^
+# Generate ground truths
+# ^^^^^^^^^^^^^^^^^^^^^^
 # 
 # Following the methods from previous Stone Soup tutorials we generate a series of combined linear Gaussian transition
 # models and generate ground truths. Each ground truth is offset in the y-direction by 10.
@@ -259,8 +259,8 @@ for j, prior in enumerate(priors):
 # Next we create our sensor manager classes. Two sensor manager classes are used in this tutorial
 # - :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager`.
 # 
-# RandomSensorManager
-# """""""""""""""""""
+# Random sensor manager
+# """""""""""""""""""""
 # 
 # The first method :class:`~.RandomSensorManager`, randomly chooses the action(s) for the sensor to take
 # to make an observation. To do this the :meth:`choose_actions`
@@ -270,8 +270,8 @@ for j, prior in enumerate(priors):
 from stonesoup.sensormanager import RandomSensorManager
 
 # %%
-# BruteForceManager
-# """""""""""""""""
+# Brute force sensor manager
+# """"""""""""""""""""""""""
 # 
 # The second method :class:`~.BruteForceSensorManager` iterates through every possible action a sensor can take at a
 # given time step and selects the action(s) which give the maximum reward as calculated by the reward function.
@@ -282,8 +282,8 @@ from stonesoup.sensormanager import RandomSensorManager
 from stonesoup.sensormanager import BruteForceSensorManager
 
 # %%
-# Create a reward function
-# """"""""""""""""""""""""
+# Reward function
+# """""""""""""""
 # The :class:`RewardFunction` calculates the uncertainty reduction by computing the difference between the
 # covariance matrix norms of the
 # prediction and the posterior assuming a predicted measurement corresponding to that prediction.
@@ -319,7 +319,7 @@ class RewardFunction(Base):
                 translation_offset=sensor.position)
 
             # Provide the updater with the correct measurement model for the sensor
-            updater.measurement_model = measurement_model
+            self.updater.measurement_model = measurement_model
 
             for track in tracks_list:
                 predicted_measurement = self.updater.predict_measurement(predictions[track])
@@ -363,8 +363,8 @@ class RewardFunction(Base):
 
 
 # %%
-# Create an instance of the sensor manager
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Initiate the sensor managers
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
 # Create an instance of each sensor manager class. Each class takes in a `sensor_set`, for this example
 # it is a set of one sensor.
@@ -392,8 +392,8 @@ bruteforcesensormanager = BruteForceSensorManager(sensor_setB,
 # 
 # The ground truths, tracks and uncertainty ellipses are then plotted.
 # 
-# Random Sensor Manager
-# """""""""""""""""""""
+# Run random sensor manager
+# """""""""""""""""""""""""
 # 
 # Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
 # :class:`~.RandomSensorManager`.
@@ -464,8 +464,8 @@ plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
 # %%
-# Brute Force Sensor Manager
-# """"""""""""""""""""""""""
+# Run brute force sensor manager
+# """"""""""""""""""""""""""""""
 #
 # Here the chosen target for observation is selected based on the difference between the covariance matrices of the
 # prediction and posterior, based upon the observation of that target.
