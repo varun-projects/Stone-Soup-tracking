@@ -23,16 +23,18 @@
 # simple radar with a defined field of view which can be pointed in a particular direction in order
 # to make an observation.
 #
-# The first method, "RandomSensorManager" chooses a target for each sensor to observe randomly with equal probability.
+# The first method, using the class :class:`~.RandomSensorManager` chooses a target for each sensor to
+# observe randomly with equal probability.
 #
-# The second method, "BruteForceSensorManager" aims to reduce the total uncertainty of the track estimates at each
+# The second method, uses the class :class:`~.BruteForceSensorManager` and aims to reduce the total
+# uncertainty of the track estimates at each
 # time step. To achieve this the sensor manager considers all possible configurations of directions for the sensors
 # to point in. The sensor manager chooses the configuration for which the sum of estimated
 # uncertainties (as represented by the Frobenius norm of the covariance matrix) can be reduced the most by observing
-# the targets in the chosen direction.
+# the targets within the field of view when pointed in the chosen direction.
 #
 # The introduction of multiple sensors means an increase in the possible combinations of target observations
-# that the UncertaintyManager must consider. This brute force optimisation method of looking at every possible
+# that the brute force sensor manager must consider. This brute force optimisation method of looking at every possible
 # combination of observations becomes very slow as more sensors are introduced. This demonstrates the
 # limitations of using this method with a large number of sensors.
 #
@@ -71,7 +73,7 @@ from stonesoup.types.detection import Detection
 # simulation is observed for is defined by `time_max`.
 #
 # We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
-# commenting out the first line in the next cell.
+# commenting out the first two lines in the next cell.
 
 np.random.seed(1991)
 
@@ -157,7 +159,7 @@ for n in range(0, total_no_sensors):
 
 # %%
 # Create the Kalman predictor and updater
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
 # Construct a predictor and updater using the :class:`~.KalmanPredictor` and :class:`~.ExtendedKalmanUpdater`
 # components from Stone Soup. The measurement model for the updater is `None` as it is an attribute of the sensor.
@@ -173,7 +175,8 @@ updater = ExtendedKalmanUpdater(measurement_model=None)
 # Run the Kalman filters
 # ^^^^^^^^^^^^^^^^^^^^^^
 #
-# Create priors which estimate the targets' initial states.
+# Create priors which estimate the targets' initial states - these are the same as in the first
+# sensor management tutorial.
 
 from stonesoup.types.state import GaussianState
 
@@ -208,7 +211,8 @@ for j, prior in enumerate(priors):
 # Random sensor manager
 # """""""""""""""""""""
 #
-# The first method :class:`~.RandomSensorManager` chooses a target to observe randomly. To do this the
+# The first method :class:`~.RandomSensorManager`, randomly chooses the action(s) for the sensors to
+# take to make an observation. To do this the
 # :meth:`choose_actions` function uses :meth:`random.choice()` to choose a direction for each
 # sensor to observe from the possible actions it can take. It returns the chosen configuration of sensors and
 # actions to be taken as a mapping.
@@ -244,7 +248,6 @@ class RewardFunction(Base):
                                                   "the track to the new state.")
 
     def calculate_reward(self, config, tracks_list, metric_time):
-        # should config always be sensors: tracks?
 
         # Reward value
         config_metric = 0
@@ -337,14 +340,7 @@ bruteforcesensormanager = BruteForceSensorManager(sensor_setB,
 # measurements taken. The tracks are updated based on these measurements with predictions made for tracks
 # which have not been observed.
 #
-# The ground truths, tracks and uncertainty ellipses are then plotted.
-#
-# Run random sensor manager
-# """""""""""""""""""""""""
-#
-# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
-# :class:`~.RandomSensorManager`. This returns a mapping of sensors to actions where actions are a direction for
-# the sensor to point in, selected randomly.
+# First a hypothesiser and data associator are required for use in both trackers.
 
 from stonesoup.hypothesiser.distance import DistanceHypothesiser
 from stonesoup.measures import Mahalanobis
@@ -354,9 +350,12 @@ from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
 data_associator = GNNWith2DAssignment(hypothesiser)
 
 # %%
+# Run random sensor manager
+# """""""""""""""""""""""""
 #
-
-from collections import defaultdict
+# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
+# :class:`~.RandomSensorManager`. This returns a mapping of sensors to actions where actions are a direction for
+# the sensor to point in, selected randomly.
 
 # Generate list of timesteps from ground truth timestamps
 timesteps = []
@@ -380,9 +379,6 @@ for timestep in timesteps[1:]:
         # Observe this ground truth
         measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
         measurementsA.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksA,
                                            measurementsA,
@@ -414,7 +410,7 @@ plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
 # %%
-# In comparison to Tutorial 1 the performance of the :class:`~.RandomSensorManager` has improved greatly. This is
+# In comparison to Tutorial 1 the performance of the :class:`~.RandomSensorManager` has improved. This is
 # because a greater number of sensors means each target is more likely to be observed. This means the uncertainty
 # of the track does not increase as much because the targets are observed more often.
 
@@ -423,12 +419,11 @@ plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 # """"""""""""""""""""""""""""""
 #
 # Here the direction for observation is selected based on the difference between the covariance matrices of the
-# prediction and the update of predicted measurement.
+# prediction and the update of predicted measurement, for targets which could be observed by the sensor
+# pointing in the given direction.
 #
-# First a list is created of all possible sensor/action configurations. Each possible configuration is a mapping
-# of sensors to tracks.
-#
-# At each time step, for each track in the tracks list:
+# Within the sensor manager a dictionary is created of sensors and all the possible actions they can take.
+# When the :meth:`choose_actions` function is called (at each time step), for each track in the tracks list:
 #
 # * A prediction is made and the covariance matrix norms stored
 # * The angle from the sensor to the prediction is calculated to establish if it within the field of view
@@ -440,10 +435,10 @@ plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 # The metric `config_metric` is calculated as the sum of the differences between these covariance matrix norms
 # for the tracks observed by the possible action configuration. The sensor manager identifies the
 # configuration which results in the largest value of this metric and therefore
-# largest reduction in uncertainty. It returns the optimum sensor/action configuration as a dictionary.
+# largest reduction in uncertainty. It returns the optimum sensors/actions configuration as a dictionary.
 #
-# The actions are given to the sensors and measurements made and
-# the tracks are updated based on these measurements, with predictions made for tracks
+# The actions are given to the sensors, measurements made and
+# the tracks updated based on these measurements. Predictions are made for tracks
 # which have not been observed by the sensors.
 
 for timestep in timesteps[1:]:
@@ -464,9 +459,6 @@ for timestep in timesteps[1:]:
         # Observe this ground truth
         measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
         measurementsB.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksB,
                                            measurementsB,
@@ -497,9 +489,7 @@ plotterB.plot_tracks(set(tracksB), [0, 2], uncertainty=True)
 
 # %%
 # The smaller uncertainty ellipses in this plot suggest that the :class:`~.BruteForceSensorManager` provides a much
-# better track than the :class:`~.RandomSensorManager`. As with the :class:`~.RandomSensorManager`,
-# performance has improved from
-# Tutorial 1 due to the additional sensors.
+# better track than the :class:`~.RandomSensorManager`.
 
 # %%
 # Combinatorics
@@ -600,7 +590,7 @@ ax.legend()
 #
 # A larger number of sensors results in improved performance for the :class:`~.RandomSensorManager`, in comparison to
 # Tutorial 1 where there is only one sensor. This is due to the increased likelihood of each target being
-# observed randomly.
+# observed randomly. `(NB: for some runs of the simulation this is not the case due to random seed error...)`
 #
 # SIAP metrics
 # ^^^^^^^^^^^^
@@ -643,6 +633,7 @@ axes[1].plot(times, [metric.value for metric in va_metricB.value],
 axes[1].legend()
 
 # %%
+# `(NB: Performance of brute force often appears worse...)`
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -668,14 +659,16 @@ ax.legend()
 # sphinx_gallery_thumbnail_number = 7
 
 # %%
-# This metric shows that the uncertainty in the tracks generated by the :class:`~.RandomSensorManager` is much greater
-# than for those generated by the :class:`~.BruteForceSensorManager`. This is also reflected by the uncertainty ellipses
+# This metric shows that the uncertainty in the tracks generated by the :class:`~.RandomSensorManager` is
+# generally greater than for those generated by the :class:`~.BruteForceSensorManager`.
+# This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
 #
 # The uncertainty for the :class:`~.BruteForceSensorManager` starts poor and then improves initially as
 # observations are made. This initial uncertainty is because the priors given are not correct. The uncertainty
 # appears to increase slowly over time. This is likely because the targets are moving further away from the
 # :class:`~.SimpleRadar` sensors so the uncertainty in the observations made increases.
+# `(NB: for some runs of the simulation this is not the case due to random seed error...)`
 
 # %%
 # References

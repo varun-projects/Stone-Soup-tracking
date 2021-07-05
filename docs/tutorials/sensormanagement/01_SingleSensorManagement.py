@@ -31,11 +31,13 @@
 # 
 # The example in this notebook considers two simple sensor management methods and applies them to the same
 # ground truths in order to quantify the difference in behaviour. The scenario simulates 10 targets moving on
-# nearly constant velocity trajectories and a radar which can be pointed in a particular direction with a
-# specified field of view.
+# nearly constant velocity trajectories and a radar with a specified field of view, which can be pointed in a
+# particular direction.
 # 
-# The first method, "RandomSensorManager" chooses a direction to point in randomly with equal probability. The
-# second method, "BruteForceSensorManager" considers every possible direction the sensor could point in and uses a
+# The first method, using the class :class:`~.RandomSensorManager` chooses a direction to point in randomly
+# with equal probability. The
+# second method, using the class :class:`~.BruteForceSensorManager` considers every possible direction the
+# sensor could point in and uses a
 # reward function to determine the best choice of action.
 # In this example the reward function aims to reduce the total uncertainty of the track estimates at each time step.
 # To achieve this the sensor manager chooses to look in the direction which results in the greatest reduction in
@@ -165,10 +167,10 @@ plotter.plot_ground_truths(truths_set, [0, 2])
 # ^^^^^^^^^^^^^^
 #
 # Create a sensor for each sensor management algorithm. This tutorial uses a specifically developed sensor
-# :class:`~.SimpleRadar`. The sensor is capable of returning the actions it can possibly take at a given time step
-# and can be given an action to take.
+# :class:`~.SimpleRadar`. The sensor is capable of returning the actions it can possibly take at a given time step,
+# i.e. the possible angles it can be pointed in. It can also be given an action to take before taking
+# measurements - in this case changing the dwell centre to point in a specific direction.
 
-# Generate sensors
 total_no_sensors = 1
 
 from stonesoup.types.state import State
@@ -182,7 +184,7 @@ for n in range(0, total_no_sensors):
         noise_covar=np.array([[np.radians(0.5) ** 2, 0],
                               [0, 0.75 ** 2]]),
         ndim_state=4,
-        position=np.array([[10], [n * 10 * 5]]),
+        position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
         dwell_centre=State([0.0], start_time)
@@ -197,7 +199,7 @@ for n in range(0, total_no_sensors):
         noise_covar=np.array([[np.radians(0.5) ** 2, 0],
                               [0, 0.75 ** 2]]),
         ndim_state=4,
-        position=np.array([[10], [n * 10 * 5]]),
+        position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
         dwell_centre=State([0.0], start_time)
@@ -377,26 +379,21 @@ randomsensormanager = RandomSensorManager(sensor_setA)
 reward_function = RewardFunction(predictor, updater)
 
 bruteforcesensormanager = BruteForceSensorManager(sensor_setB,
-                                             reward_function=reward_function.calculate_reward)
+                                                  reward_function=reward_function.calculate_reward)
 
 # %%
 # Run the sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^^
 #
-# From here the method differs slightly for each sensor manager. :class:`~.RandomSensorManager` does not
+# From here the method differs slightly for each sensor manager. For both methods the :meth:`choose_actions`
+# requires a time step, whilst the :class:`~.RandomSensorManager` does not
 # require any other input
-# variables whereas :class:`~.BruteForceSensorManager` requires a tracks list at each time step.
+# variables the :class:`~.BruteForceSensorManager` also requires a tracks list at each time step.
 # 
 # For both sensor management methods, at each time step a prediction is made for each of the targets except the chosen
 # target,  which is updated. These states are appended to the tracks list.
-# 
-# The ground truths, tracks and uncertainty ellipses are then plotted.
-# 
-# Run random sensor manager
-# """""""""""""""""""""""""
-# 
-# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
-# :class:`~.RandomSensorManager`.
+#
+# First a hypothesiser and data associator are required for use in both trackers.
 
 from stonesoup.hypothesiser.distance import DistanceHypothesiser
 from stonesoup.measures import Mahalanobis
@@ -404,6 +401,15 @@ hypothesiser = DistanceHypothesiser(predictor, updater, measure=Mahalanobis(), m
 
 from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
 data_associator = GNNWith2DAssignment(hypothesiser)
+
+# %%
+# Run random sensor manager
+# """""""""""""""""""""""""
+# 
+# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
+# :class:`~.RandomSensorManager`.
+
+
 
 # %%
 
@@ -422,7 +428,6 @@ for timestep in timesteps[1:]:
 
     for sensor, actions in chosen_action.items():
         sensor.add_actions(actions)
-    #         print(np.rad2deg(action.value))
 
     for sensor in sensor_setA:
         sensor.act(timestep)
@@ -430,9 +435,6 @@ for timestep in timesteps[1:]:
         # Observe this ground truth
         measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
         measurementsA.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksA,
                                            measurementsA,
@@ -454,7 +456,7 @@ from stonesoup.plotter import Plotter
 plotterA = Plotter()
 plotterA.ax.axis('auto')
 
-# Plot sensor positions as black x markers
+# Plot sensor position as black x marker
 for sensor in sensor_setA:
     plotterA.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
 plotterA.labels_list.append('Sensor')
@@ -467,23 +469,28 @@ plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 # Run brute force sensor manager
 # """"""""""""""""""""""""""""""
 #
-# Here the chosen target for observation is selected based on the difference between the covariance matrices of the
-# prediction and posterior, based upon the observation of that target.
+# Here the direction for observation is selected based on the difference between the
+# covariance matrices of the
+# prediction and posterior, for targets which could be observed by the sensor pointing in the given direction.
 # 
 # The :meth:`choose_actions` function from the :class:`~.BruteForceSensorManager` is called at each time step.
-# This means that at each time step, for each target:
+# This means that at each time step, for each track in the tracks list:
 # 
 #  * A prediction is made and the covariance matrix norms stored
-#  * A predicted measurement is made
+#  * The angle from the sensor to the prediction is calculated
+#  * If it is in the field of view of the sensor a predicted measurement is made
 #  * A synthetic detection is generated from this predicted measurement
 #  * A hypothesis generated based on the detection and prediction
 #  * This hypothesis is used to do an update and the covariance matrix norms of the update are stored
 #  * The difference between these covariance matrix norms is calculated
 # 
-# The sensor manager then returns the target with the largest value of this metric as the chosen target to observe.
-# 
-# The prediction for each target is appended to the tracks list at each time step, except for the chosen target for
-# which an update is appended.
+# The metric `config_metric` is calculated as the sum of the differences between these covariance matrix norms
+# for the tracks observed by the possible action. The sensor manager identifies the action which results
+# in the largest value of this metric and therefore largest reduction in uncertainty and returns the
+# sensor/action mapping.
+#
+# The chosen action is given to the sensor, measurements are made and the tracks updated based on these measurements.
+# Predictions are made for tracks which have not been observed by the sensor.
 
 for timestep in timesteps[1:]:
 
@@ -496,7 +503,6 @@ for timestep in timesteps[1:]:
     for chosen_action in chosen_actions:
         for sensor, actions in chosen_action.items():
             sensor.add_actions(actions)
-    #             print('chosen angle:', np.rad2deg(actions[0].value))
 
     for sensor in sensor_setB:
         sensor.act(timestep)
@@ -504,9 +510,6 @@ for timestep in timesteps[1:]:
         # Observe this ground truth
         measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
         measurementsB.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksB,
                                            measurementsB,
@@ -525,7 +528,7 @@ for timestep in timesteps[1:]:
 plotterB = Plotter()
 plotterB.ax.axis('auto')
 
-# Plot sensor positions as black x markers
+# Plot sensor position as black x marker
 for sensor in sensor_setB:
     plotterB.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
 # Add to legend generated
@@ -621,10 +624,9 @@ ax.set_xlabel("Time")
 ax.legend()
 
 # %%
-# OSPA distance starts large due to the position offset in the priors and then improves for both scenarios as
-# observations are made. The :class:`~.BruteForceSensorManager` generally results in a smaller OSPA distance
-# than the random
-# observations of the :class:`~.RandomSensorManager`.
+# The :class:`~.BruteForceSensorManager` generally results in a smaller OSPA distance
+# than the random observations of the :class:`~.RandomSensorManager`, reflecting the better tracking performance
+# seen in the tracking plots.
 #
 # SIAP metrics
 # ^^^^^^^^^^^^
@@ -670,13 +672,9 @@ axes[1].plot(times, [metric.value for metric in va_metricB.value],
 axes[1].legend()
 
 # %%
-# Similar to the OSPA distances, positional accuracy starts as quite poor for both scenarios due to the offset in the
-# priors, and then improves over time as observations are made. Again the :class:`BruteForceSensorManager`
-# generally results in a better positional accuracy than the random observations of the :class:`RandomSensorManager`.
-# 
-# Velocity accuracy also starts quite poor due to an error in the priors. It improves over time as more observations
-# are made, then remains relatively similar for each sensor manager. This is because the velocity remains nearly
-# constant throughout the simulation. This is not likely to be the case in a real-world scenario.
+# Similar to the OSPA distances the :class:`BruteForceSensorManager`
+# generally results in both a better positional accuracy anv velocity accuracy than the random observations
+# of the :class:`RandomSensorManager`.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -706,11 +704,11 @@ ax.legend()
 # than for those generated by the :class:`~.BruteForceSensorManager`. This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
 # 
-# The uncertainty for the :class:`~.BruteForceSensorManager` peaks initially then remains at a constant value. This peak
-# is because the priors given are offset but have a small uncertainty meaning uncertainty increases when the first
-# observations are made. This simulation is quite clean and the uncertainty of each track increases by the same
-# amount if left unobserved. Since the sensor manager is then making observations based on this uncertainty, it is
-# reducing it by the same amount each time. This means the total uncertainty in the system is constant.
+# The uncertainty for the :class:`~.BruteForceSensorManager` initially remains small and begins to increase
+# towards the end of the simulation. This could be due to a small number of targets going unobserved
+# for too long and the estimated location being too far from the truth. This could result in the sensor manager
+# pointing the sensor in a direction in which the manager thinks it will observe a target but the target
+# is not where it is expected to be.
 
 # %%
 # References
