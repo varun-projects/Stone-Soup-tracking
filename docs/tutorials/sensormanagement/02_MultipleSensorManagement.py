@@ -75,9 +75,8 @@ from stonesoup.types.detection import Detection
 # We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
 # commenting out the first two lines in the next cell.
 
-np.random.seed(1991)
-
-random.seed(1991)
+np.random.seed(1990)
+random.seed(1990)
 
 # Generate transition model
 transition_model = CombinedLinearGaussianTransitionModel([ConstantVelocity(0.005),
@@ -182,7 +181,7 @@ from stonesoup.types.state import GaussianState
 
 priors = []
 for j in range(0, ntruths):
-    priors.append(GaussianState([[0], [1.5], [yps[j]+5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25]+np.random.normal(0,5e-4,4)),
+    priors.append(GaussianState([[0], [1.5], [yps[j]+0.5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25]+np.random.normal(0,5e-4,4)),
                                 timestamp=start_time))
 
 # %%
@@ -357,6 +356,8 @@ data_associator = GNNWith2DAssignment(hypothesiser)
 # :class:`~.RandomSensorManager`. This returns a mapping of sensors to actions where actions are a direction for
 # the sensor to point in, selected randomly.
 
+from ordered_set import OrderedSet
+
 # Generate list of timesteps from ground truth timestamps
 timesteps = []
 for state in truths[0]:
@@ -377,7 +378,7 @@ for timestep in timesteps[1:]:
         sensor.act(timestep)
 
         # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurements = sensor.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
         measurementsA.extend(measurements)
 
     hypotheses = data_associator.associate(tracksA,
@@ -536,8 +537,8 @@ ospa_generator = OSPAMetric(c=40, p=1)
 from stonesoup.metricgenerator.tracktotruthmetrics import SIAPMetrics
 siap_generator = SIAPMetrics(position_mapping=[0, 2], velocity_mapping=[1, 3])
 
-from stonesoup.dataassociator.tracktotrack import TrackIDbased
-associator=TrackIDbased()
+from stonesoup.dataassociator.tracktotrack import TrackToTruth
+associator = TrackToTruth(association_threshold=30)
 
 from stonesoup.metricgenerator.uncertaintymetric import SumofCovarianceNormsMetric
 uncertainty_generator = SumofCovarianceNormsMetric()
@@ -588,10 +589,6 @@ ax.legend()
 # The OSPA distance for the :class:`~.BruteForceSensorManager` is generally smaller than for the random
 # observations of the :class:`~.RandomSensorManager`.
 #
-# A larger number of sensors results in improved performance for the :class:`~.RandomSensorManager`, in comparison to
-# Tutorial 1 where there is only one sensor. This is due to the increased likelihood of each target being
-# observed randomly. `(NB: for some runs of the simulation this is not the case due to random seed error...)`
-#
 # SIAP metrics
 # ^^^^^^^^^^^^
 #
@@ -633,7 +630,8 @@ axes[1].plot(times, [metric.value for metric in va_metricB.value],
 axes[1].legend()
 
 # %%
-# `(NB: Performance of brute force often appears worse...)`
+# Similar to the OSPA distance the :class:`~.BruteForceSensorManager` generally results in both a better
+# positional accuracy anv velocity accuracy than the random observations of the :class:`~.RandomSensorManager`.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -666,9 +664,8 @@ ax.legend()
 #
 # The uncertainty for the :class:`~.BruteForceSensorManager` starts poor and then improves initially as
 # observations are made. This initial uncertainty is because the priors given are not correct. The uncertainty
-# appears to increase slowly over time. This is likely because the targets are moving further away from the
-# :class:`~.SimpleRadar` sensors so the uncertainty in the observations made increases.
-# `(NB: for some runs of the simulation this is not the case due to random seed error...)`
+# appears to increase in places. This is likely because a target has gone unobserved for too long and is
+# no longer where the sensor thinks it is.
 
 # %%
 # References

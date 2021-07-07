@@ -126,8 +126,8 @@ from stonesoup.types.detection import Detection
 # We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
 # commenting out the first two lines in the next cell.
 
-np.random.seed(1991)
-random.seed(1991)
+np.random.seed(1990)
+random.seed(1990)
 
 # Generate transition model
 # i.e. fk(xk|xk-1)
@@ -171,40 +171,31 @@ plotter.plot_ground_truths(truths_set, [0, 2])
 # i.e. the possible angles it can be pointed in. It can also be given an action to take before taking
 # measurements - in this case changing the dwell centre to point in a specific direction.
 
-total_no_sensors = 1
-
 from stonesoup.types.state import State
 from stonesoup.sensor.actionable import SimpleRadar
 
-sensor_setA = set()
+sensorA = SimpleRadar(
+    position_mapping=(0, 2),
+    noise_covar=np.array([[np.radians(0.5) ** 2, 0],
+                          [0, 0.75 ** 2]]),
+    ndim_state=4,
+    position=np.array([[10], [0]]),
+    rpm=60,
+    fov=np.radians(30),
+    dwell_centre=State([0.0], start_time)
+)
 
-for n in range(0, total_no_sensors):
-    sensor = SimpleRadar(
-        position_mapping=(0, 2),
-        noise_covar=np.array([[np.radians(0.5) ** 2, 0],
-                              [0, 0.75 ** 2]]),
-        ndim_state=4,
-        position=np.array([[10], [n * 50]]),
-        rpm=60,
-        fov=np.radians(30),
-        dwell_centre=State([0.0], start_time)
-    )
-    sensor_setA.add(sensor)
+sensorB = SimpleRadar(
+    position_mapping=(0, 2),
+    noise_covar=np.array([[np.radians(0.5) ** 2, 0],
+                          [0, 0.75 ** 2]]),
+    ndim_state=4,
+    position=np.array([[10], [0]]),
+    rpm=60,
+    fov=np.radians(30),
+    dwell_centre=State([0.0], start_time)
+)
 
-sensor_setB = set()
-
-for n in range(0, total_no_sensors):
-    sensor = SimpleRadar(
-        position_mapping=(0, 2),
-        noise_covar=np.array([[np.radians(0.5) ** 2, 0],
-                              [0, 0.75 ** 2]]),
-        ndim_state=4,
-        position=np.array([[10], [n * 50]]),
-        rpm=60,
-        fov=np.radians(30),
-        dwell_centre=State([0.0], start_time)
-    )
-    sensor_setB.add(sensor)
 # %%
 # Create the Kalman predictor and updater
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -225,7 +216,7 @@ updater = ExtendedKalmanUpdater(measurement_model=None)
 # ^^^^^^^^^^^^^^^^^^^^^^
 #
 # First create `ntruths` priors which estimate the targets’ initial states, one for each target. In this example
-# each prior is offset by 5 in the y direction meaning the position of the track is initially not very accurate. The
+# each prior is offset by 0.5 in the y direction meaning the position of the track is initially not very accurate. The
 # velocity is also systematically offset by +0.5 in both the x and y directions.
 
 from stonesoup.types.state import GaussianState
@@ -233,7 +224,7 @@ from stonesoup.types.state import GaussianState
 priors = []
 for j in range(0, ntruths):
     priors.append(
-        GaussianState([[0], [1.5], [yps[j] + 5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25] + np.random.normal(0, 5e-4, 4)),
+        GaussianState([[0], [1.5], [yps[j]+0.5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25] + np.random.normal(0, 5e-4, 4)),
                       timestamp=start_time))
 
 # %%
@@ -373,12 +364,12 @@ class RewardFunction(Base):
 # The :class:`~.BruteForceSensorManager` also requires a callable reward function which is initiated here from the
 # :class:`RewardFunction` created above.
 
-randomsensormanager = RandomSensorManager(sensor_setA)
+randomsensormanager = RandomSensorManager({sensorA})
 
 # initiate reward function
 reward_function = RewardFunction(predictor, updater)
 
-bruteforcesensormanager = BruteForceSensorManager(sensor_setB,
+bruteforcesensormanager = BruteForceSensorManager({sensorB},
                                                   reward_function=reward_function.calculate_reward)
 
 # %%
@@ -413,6 +404,8 @@ data_associator = GNNWith2DAssignment(hypothesiser)
 
 # %%
 
+from ordered_set import OrderedSet
+
 # Generate list of timesteps from ground truth timestamps
 timesteps = []
 for state in truths[0]:
@@ -429,12 +422,11 @@ for timestep in timesteps[1:]:
     for sensor, actions in chosen_action.items():
         sensor.add_actions(actions)
 
-    for sensor in sensor_setA:
-        sensor.act(timestep)
+    sensorA.act(timestep)
 
-        # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
-        measurementsA.extend(measurements)
+    # Observe this ground truth
+    measurements = sensorA.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
+    measurementsA.extend(measurements)
 
     hypotheses = data_associator.associate(tracksA,
                                            measurementsA,
@@ -457,8 +449,7 @@ plotterA = Plotter()
 plotterA.ax.axis('auto')
 
 # Plot sensor position as black x marker
-for sensor in sensor_setA:
-    plotterA.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
+plotterA.ax.scatter(sensorA.position[0], sensorA.position[1], marker='x', c='black')
 plotterA.labels_list.append('Sensor')
 plotterA.handles_list.append(Line2D([], [], linestyle='', marker='x', c='black'))
 
@@ -504,12 +495,11 @@ for timestep in timesteps[1:]:
         for sensor, actions in chosen_action.items():
             sensor.add_actions(actions)
 
-    for sensor in sensor_setB:
-        sensor.act(timestep)
+    sensorB.act(timestep)
 
-        # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
-        measurementsB.extend(measurements)
+    # Observe this ground truth
+    measurements = sensorB.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
+    measurementsB.extend(measurements)
 
     hypotheses = data_associator.associate(tracksB,
                                            measurementsB,
@@ -529,8 +519,7 @@ plotterB = Plotter()
 plotterB.ax.axis('auto')
 
 # Plot sensor position as black x marker
-for sensor in sensor_setB:
-    plotterB.ax.scatter(sensor.position[0], sensor.position[1], marker='x', c='black')
+plotterB.ax.scatter(sensorB.position[0], sensorB.position[1], marker='x', c='black')
 # Add to legend generated
 plotterB.labels_list.append('Sensor')
 plotterB.handles_list.append(Line2D([], [], linestyle='', marker='x', c='black'))
@@ -557,11 +546,10 @@ siap_generator = SIAPMetrics(position_mapping=[0, 2], velocity_mapping=[1, 3])
 
 # %%
 # The SIAP metrics require an associator to associate tracks to ground truths. This is done using the
-# :class:`~.TrackIDbased` associator. This associator uses the track ID to associate each track to the ground truth
-# with the same ID. The associator is initiated and later used in the metric manager.
+# :class:`~.TrackToTruth` associator.
 
-from stonesoup.dataassociator.tracktotrack import TrackIDbased
-associator = TrackIDbased()
+from stonesoup.dataassociator.tracktotrack import TrackToTruth
+associator = TrackToTruth(association_threshold=30)
 
 # %%
 # The OSPA and SIAP metrics don't take the uncertainty of the track into account. The initial plots of the
@@ -672,9 +660,9 @@ axes[1].plot(times, [metric.value for metric in va_metricB.value],
 axes[1].legend()
 
 # %%
-# Similar to the OSPA distances the :class:`BruteForceSensorManager`
+# Similar to the OSPA distances the :class:`~.BruteForceSensorManager`
 # generally results in both a better positional accuracy anv velocity accuracy than the random observations
-# of the :class:`RandomSensorManager`.
+# of the :class:`~.RandomSensorManager`.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -700,12 +688,12 @@ ax.legend()
 # sphinx_gallery_thumbnail_number = 6
 
 # %%
-# This metric shows that the uncertainty in the tracks generated by the :class:`RandomSensorManager` is much greater
+# This metric shows that the uncertainty in the tracks generated by the :class:`~.RandomSensorManager` is much greater
 # than for those generated by the :class:`~.BruteForceSensorManager`. This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
 # 
-# The uncertainty for the :class:`~.BruteForceSensorManager` initially remains small and begins to increase
-# towards the end of the simulation. This could be due to a small number of targets going unobserved
+# The uncertainty for the :class:`~.BruteForceSensorManager` initially remains small but can begin to increase
+# towards the end of the simulation in some scenarios. This could be due to a small number of targets going unobserved
 # for too long and the estimated location being too far from the truth. This could result in the sensor manager
 # pointing the sensor in a direction in which the manager thinks it will observe a target but the target
 # is not where it is expected to be.
