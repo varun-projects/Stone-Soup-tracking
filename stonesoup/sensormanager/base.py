@@ -78,9 +78,10 @@ class RandomSensorManager(SensorManager):
 
         for sensor in self.sensors:
             action_generators = sensor.actions(timestamp)
+            chosen_actions = []
             for action_gen in action_generators:
-                action_choices = random.sample(list(action_gen), k=nchoose)
-            sensor_action_assignment[sensor] = action_choices
+                chosen_actions.extend(random.sample(list(action_gen), k=nchoose))
+            sensor_action_assignment[sensor] = chosen_actions
 
         return sensor_action_assignment
 
