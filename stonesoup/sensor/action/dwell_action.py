@@ -98,9 +98,18 @@ class DwellActionsGenerator(ActionGenerator):
         left, right = Angle(self.min - self.fov / 2), Angle(self.max + self.fov / 2)
 
         if left < right:
-            return left <= item <= right
+            if left <= item <= right:
+                return True
+            else:
+                return False
+
         else:
-            return Angle(-np.pi) <= item <= left or right <= item <= Angle(np.pi)
+            # return Angle(-np.pi) <= item <= left or right <= item <= Angle(np.pi)
+            if Angle(np.radians(-180)) <= item <= left \
+                    or right <= item <= Angle(np.radians(180)):
+                return True
+            else:
+                return False
 
     def _get_end_time_direction(self, bearing):
         if self.initial_bearing <= bearing:
