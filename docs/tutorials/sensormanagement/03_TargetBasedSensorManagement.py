@@ -124,8 +124,8 @@ from stonesoup.types.detection import Detection
 # We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
 # commenting out the first two lines in the next cell.
 
-np.random.seed(1991)
-random.seed(1991)
+np.random.seed(1990)
+random.seed(1990)
 
 # Generate transition model
 # i.e. fk(xk|xk-1)
@@ -182,7 +182,7 @@ for n in range(0, total_no_sensors):
         noise_covar=np.array([[np.radians(0.5) ** 2, 0],
                               [0, 0.75 ** 2]]),
         ndim_state=4,
-        position=np.array([[10], [n * 10 * 5]]),
+        position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
         dwell_centre=State([0.0], start_time)
@@ -197,7 +197,7 @@ for n in range(0, total_no_sensors):
         noise_covar=np.array([[np.radians(0.5) ** 2, 0],
                               [0, 0.75 ** 2]]),
         ndim_state=4,
-        position=np.array([[10], [n * 10 * 5]]),
+        position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
         dwell_centre=State([0.0], start_time)
@@ -231,7 +231,7 @@ from stonesoup.types.state import GaussianState
 priors = []
 for j in range(0, ntruths):
     priors.append(
-        GaussianState([[0], [1.5], [yps[j] + 5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25] + np.random.normal(0, 5e-4, 4)),
+        GaussianState([[0], [1.5], [yps[j] + 0.5], [1.5]], np.diag([1.5, 0.25, 1.5, 0.25] + np.random.normal(0, 5e-4, 4)),
                       timestamp=start_time))
 
 # %%
@@ -259,8 +259,8 @@ for j, prior in enumerate(priors):
 # Next we create our sensor manager classes. Two sensor manager classes are used in this tutorial
 # - :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager`.
 # 
-# RandomSensorManager
-# """""""""""""""""""
+# Random sensor manager
+# """""""""""""""""""""
 # 
 # The first method :class:`~.RandomSensorManager`, randomly chooses the action(s) for the sensor to take
 # to make an observation. To do this the :meth:`choose_actions`
@@ -269,9 +269,45 @@ for j, prior in enumerate(priors):
 
 from stonesoup.sensormanager import RandomSensorManager
 
+
+class TargetBasedRandomManager(RandomSensorManager):
+    sensors: set = Property(doc="Set of sensors in use")
+    predictor: KalmanPredictor = Property()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def choose_actions(self, tracks_list, timestamp, nchoose=1):
+        sensor_action_assignment = dict()
+
+        # For each sensor, randomly select an action to take
+        for sensor in self.sensors:
+            action_generators = sensor.actions(timestamp)
+            chosen_actions = []  # selected action(s) for sensor to take
+
+            angles_to_targets = []
+            for track in tracks_list:
+                prediction = self.predictor.predict(track[-1], timestamp)
+                relative_position = prediction.state_vector[[0, 2], :] - sensor.position[[0, 1], :]
+                angle_to_target = np.arctan2(relative_position[1], relative_position[0])
+                angles_to_targets.append(angle_to_target)
+
+            for action_gen in action_generators:
+                action_choices = []  # possible actions from action_gen
+                for angle in angles_to_targets:
+                    if angle in action_gen:
+                        action_choices.append(action_gen.action_from_value(angle_to_target))
+
+                chosen_actions.extend(random.sample(action_choices, k=nchoose))
+
+            sensor_action_assignment[sensor] = chosen_actions
+
+            # Return dictionary of sensors and actions to take
+        return sensor_action_assignment
+
 # %%
-# BruteForceManager
-# """""""""""""""""
+# Brute force sensor manager
+# """"""""""""""""""""""""""
 # 
 # The second method :class:`~.BruteForceSensorManager` iterates through every possible action a sensor can take at a
 # given time step and selects the action(s) which give the maximum reward as calculated by the reward function.
@@ -298,16 +334,77 @@ from stonesoup.sensormanager import RandomSensorManager
 
 from stonesoup.sensormanager import BruteForceSensorManager
 
+import itertools as it
+from functools import partial
+from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
+from typing import Callable
+
+
+class TargetBasedBruteForceManager(Base):
+    sensors: set = Property(doc="Set of sensors in use")
+    predictor: KalmanPredictor = Property()
+    #     updater: ExtendedKalmanUpdater = Property()
+    reward_function: Callable = Property()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def choose_actions(self, tracks_list, timestamp, nchoose=1):
+        all_action_choices = dict()
+
+        # For each sensor, randomly select an action to take
+        for sensor in self.sensors:
+            action_generators = sensor.actions(timestamp)
+            sensor_action_choices = list(it.product(*action_generators))  # all possible actions
+            selected_action_choices = []  # actions which point at targets
+
+            angles_to_targets = []
+            for track in tracks_list:
+                prediction = self.predictor.predict(track[-1], timestamp)
+                relative_position = prediction.state_vector[[0, 2], :] - sensor.position[[0, 1], :]
+                angle_to_target = np.arctan2(relative_position[1], relative_position[0])
+                angles_to_targets.append(angle_to_target)
+
+            best_choice_metric = 0
+            for choice in sensor_action_choices:
+                choice_metric = 0
+                for item in choice:
+                    for angle in angles_to_targets:
+                        if angle in item:
+                            choice_metric += 1
+                if choice_metric >= best_choice_metric:
+                    best_choice_metric = choice_metric
+                    selected_action_choices.append(choice)
+
+            # dictionary of sensors: list(action combinations)
+            all_action_choices[sensor] = selected_action_choices  # list of tuples
+
+        # get tuple of dictionaries of sensors: actions
+        configs = ({sensor: action
+                    for sensor, action in zip(all_action_choices.keys(), actionconfig)}
+                   for actionconfig in it.product(*all_action_choices.values()))
+
+        best_rewards = np.zeros(nchoose) - np.inf
+        selected_configs = [None] * nchoose
+        for config in configs:
+            # calculate reward for dictionary of sensors: actions
+            reward = self.reward_function(config, tracks_list, timestamp)
+            if reward > min(best_rewards):
+                selected_configs[np.argmin(best_rewards)] = config
+                best_rewards[np.argmin(best_rewards)] = reward
+
+        # Return mapping of sensors and chosen actions for sensors
+        return selected_configs
+
+
 # %%
-# Create a reward function
-# """"""""""""""""""""""""
+# Reward function
+# """""""""""""""
 # The :class:`RewardFunction` calculates the difference between the covariance matrix norms of the
 # prediction and the posterior assuming a predicted measurement corresponding to that prediction. The
 # :meth:`reward_list` function then generates a list of this metric for every track.
 
 from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
-from stonesoup.functions import pol2cart
-from stonesoup.types.array import StateVector
 
 
 class RewardFunction(Base):
@@ -316,7 +413,6 @@ class RewardFunction(Base):
                                                   "the track to the new state.")
 
     def calculate_reward(self, config, tracks_list, metric_time):
-        # should config always be sensors: tracks?
 
         # Reward value
         config_metric = 0
@@ -325,6 +421,7 @@ class RewardFunction(Base):
         predictions = {track: self.predictor.predict(track[-1],
                                                      timestamp=metric_time)
                        for track in tracks_list}
+
         # Running updates
         r_updates = dict()
 
@@ -338,7 +435,7 @@ class RewardFunction(Base):
                 translation_offset=sensor.position)
 
             # Provide the updater with the correct measurement model for the sensor
-            updater.measurement_model = measurement_model
+            self.updater.measurement_model = measurement_model
 
             for track in tracks_list:
                 predicted_measurement = self.updater.predict_measurement(predictions[track])
@@ -382,20 +479,21 @@ class RewardFunction(Base):
 
 
 # %%
-# Create an instance of the sensor manager
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Initiate sensor managers
+# ^^^^^^^^^^^^^^^^^^^^^^^^
 #
 # Create an instance of each sensor manager class. Each class takes in a `action_list`, a list of the possible actions
 # to select from. Here this is the possible target numbers the manager can choose to observe. The
 # :class:`UncertaintyManager` also requires a predictor and an updater.
 
-randomactionmanager = RandomSensorManager(sensor_setA)
+randomactionmanager = TargetBasedRandomManager(sensor_setA, predictor)
 
 # initiate reward function
 reward_function = RewardFunction(predictor, updater)
 
-uncertaintymanager = BruteForceSensorManager(sensor_setB,
-                                             reward_function=reward_function.calculate_reward)
+bruteforceactionmanager = TargetBasedBruteForceManager(sensor_setB,
+                                                       predictor,
+                                                       reward_function=reward_function.calculate_reward)
 
 # %%
 # Run the sensor managers
@@ -408,12 +506,7 @@ uncertaintymanager = BruteForceSensorManager(sensor_setB,
 # target,  which is updated. These states are appended to the tracks list.
 # 
 # The ground truths, tracks and uncertainty ellipses are then plotted.
-# 
-# RandomManager
-# """""""""""""
-# 
-# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
-# :class:`RandomManager`.
+#
 
 from stonesoup.hypothesiser.distance import DistanceHypothesiser
 from stonesoup.measures import Mahalanobis
@@ -423,6 +516,13 @@ from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
 data_associator = GNNWith2DAssignment(hypothesiser)
 
 # %%
+# Run random sensor manager
+# """""""""""""""""""""""""
+#
+# Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
+# :class:`RandomManager`.
+
+from ordered_set import OrderedSet
 
 # Generate list of timesteps from ground truth timestamps
 timesteps = []
@@ -432,7 +532,7 @@ for state in truths[0]:
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
-    chosen_action = randomactionmanager.choose_actions(timestep)
+    chosen_action = randomactionmanager.choose_actions(tracksA, timestep)
 
     # Create empty dictionary for measurements
     measurementsA = []
@@ -445,11 +545,8 @@ for timestep in timesteps[1:]:
         sensor.act(timestep)
 
         # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurements = sensor.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
         measurementsA.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksA,
                                            measurementsA,
@@ -481,31 +578,31 @@ plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
 # %%
-# UncertaintyManager
-# """"""""""""""""""
+# Run brute force sensor manager
+# """"""""""""""""""""""""""""""
 #
 # Here the chosen target for observation is selected based on the difference between the covariance matrices of the
 # prediction and posterior, based upon the observation of that target.
-# 
+#
 # The :meth:`choose_actions` function from the :class:`UncertaintyManager` is called at each time step. This means
 # that at each time step, for each target:
-# 
+#
 #  * A prediction is made and the covariance matrix norms stored
 #  * A predicted measurement is made
 #  * A synthetic detection is generated from this predicted measurement
 #  * A hypothesis generated based on the detection and prediction
 #  * This hypothesis is used to do an update and the covariance matrix norms of the update are stored
 #  * The difference between these covariance matrix norms is calculated
-# 
+#
 # The sensor manager then returns the target with the largest value of this metric as the chosen target to observe.
-# 
+#
 # The prediction for each target is appended to the tracks list at each time step, except for the chosen target for
 # which an update is appended.
 
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
-    chosen_actions = uncertaintymanager.choose_actions(tracksB, timestep)
+    chosen_actions = bruteforceactionmanager.choose_actions(tracksB, timestep)
 
     # Create empty dictionary for measurements
     measurementsB = []
@@ -513,17 +610,13 @@ for timestep in timesteps[1:]:
     for chosen_action in chosen_actions:
         for sensor, actions in chosen_action.items():
             sensor.add_actions(actions)
-    #             print('chosen angle:', np.rad2deg(actions[0].value))
 
     for sensor in sensor_setB:
         sensor.act(timestep)
 
         # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurements = sensor.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
         measurementsB.extend(measurements)
-
-        # Generate clutter at this time-step
-        # Skipped for now
 
     hypotheses = data_associator.associate(tracksB,
                                            measurementsB,
@@ -568,21 +661,8 @@ ospa_generator = OSPAMetric(c=40, p=1)
 from stonesoup.metricgenerator.tracktotruthmetrics import SIAPMetrics
 siap_generator = SIAPMetrics(position_mapping=[0, 2], velocity_mapping=[1, 3])
 
-# %%
-# The SIAP metrics require an associator to associate tracks to ground truths. This is done using the
-# :class:`~.TrackIDbased` associator. This associator uses the track ID to associate each track to the ground truth
-# with the same ID. The associator is initiated and later used in the metric manager.
-
-from stonesoup.dataassociator.tracktotrack import TrackIDbased
-associator = TrackIDbased()
-
-# %%
-# The OSPA and SIAP metrics don't take the uncertainty of the track into account. The initial plots of the
-# tracks and ground truths show by plotting the uncertainty ellipses that there is generally less uncertainty
-# in the tracks generated by the :class:`UncertaintyManager`.
-# 
-# To capture this we can use an uncertainty metric to look at the sum of covariance matrix norms at
-# each time step. This gives a representation of the overall uncertainty of the tracking over time.
+from stonesoup.dataassociator.tracktotrack import TrackToTruth
+associator = TrackToTruth(association_threshold=30)
 
 from stonesoup.metricgenerator.uncertaintymetric import SumofCovarianceNormsMetric
 uncertainty_generator = SumofCovarianceNormsMetric()
@@ -628,10 +708,10 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.plot([i.timestamp for i in ospa_metricA.value],
         [i.value for i in ospa_metricA.value],
-        label='RandomManager')
+        label='TargetBasedRandomManager')
 ax.plot([i.timestamp for i in ospa_metricB.value],
         [i.value for i in ospa_metricB.value],
-        label='UncertaintyManager')
+        label='TargetBasedBruteForceManager')
 ax.set_ylabel("OSPA distance")
 ax.set_xlabel("Time")
 ax.legend()
@@ -672,16 +752,16 @@ times = metric_managerB.list_timestamps()
 
 axes[0].set(title='Positional Accuracy', xlabel='Time', ylabel='PA')
 axes[0].plot(times, [metric.value for metric in pa_metricA.value],
-             label='RandomManager')
+             label='TargetBasedRandomManager')
 axes[0].plot(times, [metric.value for metric in pa_metricB.value],
-             label='UncertaintyManager')
+             label='TargetBasedBruteForceManager')
 axes[0].legend()
 
 axes[1].set(title='Velocity Accuracy', xlabel='Time', ylabel='VA')
 axes[1].plot(times, [metric.value for metric in va_metricA.value],
-             label='RandomManager')
+             label='TargetBasedRandomManager')
 axes[1].plot(times, [metric.value for metric in va_metricB.value],
-             label='UncertaintyManager')
+             label='TargetBasedBruteForceManager')
 axes[1].legend()
 
 # %%
@@ -706,10 +786,10 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.plot([i.timestamp for i in uncertainty_metricA.value],
         [i.value for i in uncertainty_metricA.value],
-        label='RandomManager')
+        label='TargetBasedRandomManager')
 ax.plot([i.timestamp for i in uncertainty_metricB.value],
         [i.value for i in uncertainty_metricB.value],
-        label='UncertaintyManager')
+        label='TargetBasedBruteForceManager')
 ax.set_ylabel("Sum of covariance matrix norms")
 ax.set_xlabel("Time")
 ax.legend()

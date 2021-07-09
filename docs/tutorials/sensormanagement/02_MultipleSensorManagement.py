@@ -458,7 +458,7 @@ for timestep in timesteps[1:]:
         sensor.act(timestep)
 
         # Observe this ground truth
-        measurements = sensor.measure({truth[timestep] for truth in truths}, noise=True)
+        measurements = sensor.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
         measurementsB.extend(measurements)
 
     hypotheses = data_associator.associate(tracksB,
