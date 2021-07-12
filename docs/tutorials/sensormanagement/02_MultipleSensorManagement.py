@@ -33,9 +33,9 @@
 # uncertainties (as represented by the Frobenius norm of the covariance matrix) can be reduced the most by observing
 # the targets within the field of view when pointed in the chosen direction.
 #
-# The introduction of multiple sensors means an increase in the possible combinations of target observations
+# The introduction of multiple sensors means an increase in the possible combinations of action choices
 # that the brute force sensor manager must consider. This brute force optimisation method of looking at every possible
-# combination of observations becomes very slow as more sensors are introduced. This demonstrates the
+# combination of actions becomes very slow as more sensors are introduced. This demonstrates the
 # limitations of using this method with a large number of sensors.
 #
 # As in the first tutorial the OSPA [#]_, SIAP [#]_ and uncertainty metrics are used to assess the performance of the
@@ -631,7 +631,7 @@ axes[1].legend()
 
 # %%
 # Similar to the OSPA distance the :class:`~.BruteForceSensorManager` generally results in both a better
-# positional accuracy anv velocity accuracy than the random observations of the :class:`~.RandomSensorManager`.
+# positional accuracy and velocity accuracy than the random observations of the :class:`~.RandomSensorManager`.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
