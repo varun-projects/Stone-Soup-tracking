@@ -9,85 +9,40 @@
 
 # %%
 # 
-# This tutorial introduces the sensor manager classes in Stone Soup which can be used to build simple sensor management
-# algorithms for tracking and state estimation. The intention is to further build on these base classes to develop more
-# complicated sensor management algorithms.
+# This tutorial uses the sensor manager classes in Stone Soup which have been demonstrated in the previous
+# sensor management tutorials and further develops classes for target based sensor management.
 # 
-# Background
-# ----------
-# 
-# Sensor management is the process of deciding and executing the actions that a sensor or group of sensors
-# will take in a specific scenario and with a particular objective, or objectives in mind. The process
-# involves using information about the scenario to determine an appropriate action for the sensing system
-# to take. An observation of the state of the system is then made using the sensing configuration decided
-# by the sensor manager. The observations are used to update the estimate of the collective states and this
-# update is used (if necessary) to determine the next action for the sensing system to take.
-# 
-# A simple example can be imagined using a sensor with a limited field of view which must decide which direction
-# it should point at each time step. Alternatively, we might construct an objective based example by imagining
-# that the desired target is fast moving and the sensor can only observe one target at a time. If there are
-# multiple targets which could be observed the sensor manager could choose to observe the target that had the
-# greatest estimated velocity at the current time.
-# 
-# The example in this notebook considers two simple sensor management methods and applies them to the same
-# ground truths in order to quantify the difference in behaviour. The scenario simulates 10 targets moving on
-# nearly constant velocity trajectories and a radar which can be pointed in a particular direction with a
-# specified field of view.
-# 
-# The first method, "RandomSensorManager" chooses a direction to point in randomly with equal probability. The
-# second method, "BruteForceManager" considers every possible direction the sensor could point in and uses a
-# reward function to determine the best choice of action.
-# In this example the reward function aims to reduce the total uncertainty of the track estimates at each time step.
-# To achieve this the sensor manager chooses to look in the direction which results in the greatest reduction in
-# uncertainty - as represented by
-# the Frobenius norm of the covariance matrix.
+# Target based sensor management
+# ------------------------------
 #
-# Sensor management as a POMDP
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# The example in this tutorial considers the same scenario as previous sensor management tutorials
+# - 10 targets moving on nearly constant velocity trajectories and an adjustable number of
+# :class:`~.SimpleRadar` sensors with a defined field of view which can be pointed in a
+# particular direction in order to make an observation.
 #
-# Sensor management problems can be considered as Partially Observable Markov Decision Processes (POMDPs) where
-# observations provide information about the current state of the system but there is uncertainty in the estimate
-# of the underlying state due to noisy sensors and imprecise models of target evaluation.
-# 
-# POMDPs consist of:
-#  * :math:`X_k`, the finite set of possible states for each stage index :math:`k`.
-#  * :math:`A_k`, the finite set of possible actions for each stage index :math:`k`.
-#  * :math:`R_k(x, a)`, the reward function.
-#  * :math:`Z_k`, the finite set of possible observations for each stage index :math:`k`.
-#  * :math:`f_k(x_{k}|x_{k-1})`, a (set of) state transition function(s). (Note that actions are excluded from
-#    the function at the moment. It may be necessary to include them if prior sensor actions cause the targets to
-#    modify their behaviour.)
-#  * :math:`h_k(z_k | x_k, a_k)`, a (set of) observation function(s).
-#  * :math:`\{x\}_k`, the set of states at :math:`k` to be estimated.
-#  * :math:`\{a\}_k`, a set of actions at :math:`k` to be chosen.
-#  * :math:`\{z\}_k`, the observations at :math:`k` returned by the sensor.
-#  * :math:`\Psi_{k-1}`, denotes the complete set of 'intelligence' available to the sensor manager before deciding
-#    on an action at :math:`k`. This includes the prior set of state estimates :math:`\{x\}_{k-1}`, but may also
-#    encompass contextual information, sensor constraints or mission parameters.
+# The sensor management methods explored here are based on the sensor manager classes available in the
+# stone soup framework but developed further to consider the estimated location of the targets before applying
+# the sensor management algorithms. Each method first estimates the angles between the sensor(s) and each target's
+# predicted location. The sensor management algorithms then use the sensor's :meth:`action_from_value` method to
+# generate the action for the sensor to take which would points the dwell centre at the given angle.
+# The sensor managers then select the action(s)
+# for the sensor(s) using their respective methods.
 #
-# Figure 1: Illustration of sequential actions and measurements. [#]_
+# The first method, :class:`TargetBasedRandomManager` selects an action randomly from the possible actions,
+# with equal probability.
+# As in the previous tutorials the second method, :class:`TargetBasedBruteForceManager` aims to reduce the total
+# uncertainty of the track estimates at each time step. To achieve this the sensor manager considers all
+# combinations of the possible directions for the sensor(s) to point in. The sensor manager
+# chooses the configuration for which the sum of estimated uncertainties (as represented by the Frobenius
+# norm of the covariance matrix) can be reduced the most by observing the targets within the field of view
+# when pointed in the chosen direction.
 #
-# .. image:: ../../_static/sensor_management_flow_diagram.png
-#   :width: 800
-#   :alt: Illustration of sequential actions and measurements
+# Only considering actions which point the sensor in the direction of an estimated location for a target reduces the
+# possibilities that the brute force method needs to consider. The possible actions for a sensor to take
+# are no longer any direction available at the given resolution, just the directions where there is predicted
+# to be a target. In this scenario the maximum number of actions to choose from is 10 per sensor - one for each target.
+# This reduces the run time of the algorithm, even for a larger number of sensors.
 #
-# :math:`\Psi_k` is the intelligence available to the sensor manager at stage index :math:`k`, to help
-# select the action :math:`a_k` for the system to take. An observation :math:`z_k` is made by the sensing system,
-# giving information on the state :math:`x_k`. The action :math:`a_k` and observation :math:`z_k` are added to the
-# intelligence set to generate :math:`\Psi_{k+1}`, the intelligence available at stage index :math:`k+1`.
-#
-# Comparing sensor management methods using metrics
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#
-# The performance of the two sensor management methods explored in this notebook can be assessed using metrics
-# available from the Stone Soup framework. The metrics used to assess the performance of the different methods
-# are the OPSA metric [#]_, SIAP metrics [#]_ and an uncertainty metric. Demonstration of the OSPA and SIAP metrics
-# can be found in the Metrics Example.
-# 
-# The uncertainty metric computes the covariance matrices of all target states at each time step and calculates the
-# sum of their norms. This gives a measure of the total uncertainty across all tracks at each time step.
-
-# %%
 # Sensor Management example
 # -------------------------
 # 
@@ -113,22 +68,18 @@ from stonesoup.types.detection import Detection
 # Generate ground truth
 # ^^^^^^^^^^^^^^^^^^^^^
 # 
-# Following the methods from previous Stone Soup tutorials we generate a series of combined linear Gaussian transition
-# models and generate ground truths. Each ground truth is offset in the y-direction by 10.
-# 
-# Ground truths are assigned an ID. This is later used by the data associator for the metrics.
-# 
-# The number of targets in this simulation is defined by `n_truths` - here there are 10 targets. The time the
-# simulation is observed for is defined by `time_max`.
-# 
-# We can fix our random number generator in order to probe a particular example repeatedly. This can be undone by
-# commenting out the first two lines in the next cell.
+# Generate transition model and ground truths as in Tutorials 1 and 2.
+#
+# The number of targets in this simulation is defined by `n_truths` - here there are 10 targets.
+# The time the simulation is observed for is defined by `time_max`.
+#
+# We can fix our random number generator in order to probe a particular example repeatedly.
+# This can be undone by commenting out the first two lines in the next cell.
 
 np.random.seed(1990)
 random.seed(1990)
 
 # Generate transition model
-# i.e. fk(xk|xk-1)
 transition_model = CombinedLinearGaussianTransitionModel([ConstantVelocity(0.005),
                                                           ConstantVelocity(0.005)])
 
@@ -164,11 +115,9 @@ plotter.plot_ground_truths(truths_set, [0, 2])
 # Create sensors
 # ^^^^^^^^^^^^^^
 #
-# Create a sensor for each sensor management algorithm. This tutorial uses a specifically developed sensor
-# :class:`~.SimpleRadar`. The sensor is capable of returning the actions it can possibly take at a given time step
-# and can be given an action to take.
+# Create a sensor for each sensor management algorithm. As in the previous tutorials a specifically developed sensor
+# :class:`~.SimpleRadar` is used here.
 
-# Generate sensors
 total_no_sensors = 1
 
 from stonesoup.types.state import State
@@ -208,8 +157,7 @@ for n in range(0, total_no_sensors):
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
 # Construct a predictor and updater using the :class:`~.KalmanPredictor` and :class:`~.ExtendedKalmanUpdater`
-# components from Stone Soup. The :class:`~.ExtendedKalmanUpdater` is used because it can be used for both linear
-# and nonlinear measurement models.
+# components from Stone Soup. The measurement model for the updater is `None` as it is an attribute of the sensor.
 
 from stonesoup.predictor.kalman import KalmanPredictor
 predictor = KalmanPredictor(transition_model)
@@ -222,9 +170,8 @@ updater = ExtendedKalmanUpdater(measurement_model=None)
 # Run the Kalman filters
 # ^^^^^^^^^^^^^^^^^^^^^^
 #
-# First create `ntruths` priors which estimate the targets’ initial states, one for each target. In this example
-# each prior is offset by 5 in the y direction meaning the position of the track is initially not very accurate. The
-# velocity is also systematically offset by +0.5 in both the x and y directions.
+# Create priors which estimate the targets’ initial states - these are the same as in the previous
+# sensor management tutorials.
 
 from stonesoup.types.state import GaussianState
 
@@ -237,17 +184,15 @@ for j in range(0, ntruths):
 # %%
 # Initialise the tracks by creating an empty list and appending the priors generated. This needs to be done separately
 # for both sensor manager methods as they will generate different sets of tracks.
-#
-# (NB: Tracks are also assigned an ID, used later for data association)
 
 from stonesoup.types.track import Track
 
-# Initialise tracks from the RandomSensorManager
+# Initialise tracks from the TargetBasedRandomManager
 tracksA = []
 for j, prior in enumerate(priors):
     tracksA.append(Track([prior], id=f"id{j}"))
 
-# Initialise tracks from the BruteForceSensorManager
+# Initialise tracks from the TargetBasedBruteForceManager
 tracksB = []
 for j, prior in enumerate(priors):
     tracksB.append(Track([prior], id=f"id{j}"))
@@ -256,22 +201,25 @@ for j, prior in enumerate(priors):
 # Create sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^
 #
-# Next we create our sensor manager classes. Two sensor manager classes are used in this tutorial
-# - :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager`.
+# Next we create our sensor manager classes. Two sensor manager classes are created in this tutorial
+# - :class:`TargetBasedRandomManager` and :class:`TargetBasedBruteForceManager`. They are based on
+# the :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager` classes from the stone soup framework.
+# Both methods first calculate the angles from the sensor(s) to the estimated positions of the targets and then use
+# their respective algorithms to choose an action for the sensor(s), selecting a direction to point in from
+# those which will likely observe a target.
 # 
-# Random sensor manager
-# """""""""""""""""""""
+# Target based random manager
+# """""""""""""""""""""""""""
 # 
-# The first method :class:`~.RandomSensorManager`, randomly chooses the action(s) for the sensor to take
+# The first method :class:`TargetBasedRandomManager`, randomly chooses the action(s) for the sensor to take
 # to make an observation. To do this the :meth:`choose_actions`
-# function uses :meth:`random.sample()` to draw a random sample from all possible directions the sensor could point in
-# at each time step.
+# function uses :meth:`random.sample()` to draw a random sample from all directions the sensor could point in
+# which would directly observe a target.
 
 from stonesoup.sensormanager import RandomSensorManager
 
 
 class TargetBasedRandomManager(RandomSensorManager):
-    sensors: set = Property(doc="Set of sensors in use")
     predictor: KalmanPredictor = Property()
 
     def __init__(self, *args, **kwargs):
@@ -306,45 +254,22 @@ class TargetBasedRandomManager(RandomSensorManager):
         return sensor_action_assignment
 
 # %%
-# Brute force sensor manager
-# """"""""""""""""""""""""""
+# Target based brute force manager
+# """"""""""""""""""""""""""""""""
 # 
-# The second method :class:`~.BruteForceSensorManager` iterates through every possible action a sensor can take at a
-# given time step and selects the action(s) which give the maximum reward as calculated by the reward function.
+# The second method :class:`TargetBasedBruteForceManager` iterates through the possible actions a sensor can take
+# that result in the sensor pointing at a target and selects the action(s) which give the maximum
+# reward as calculated by the reward function.
 # In this example the reward function is written such that the sensor
 # manager chooses a direction for the sensor to point in such that the total uncertainty of the tracks will be
 # reduced the most by making an observation in that direction.
-# 
-# The choice of angle which is to be observed, :math:`A` is found using the following equation:
-# 
-# .. math::
-#           N = \underset{n}{\operatorname{argmax}}(m_n)
-#
-# 
-# where :math:`n \in \lbrace{1, 2, ..., \eta}\rbrace` and :math:`\eta` is the number of targets. The metric,
-# :math:`m_n` is calculated for each track using the following equation.
-# 
-# .. math::
-#           m_n = \begin{Vmatrix}P_{k|k-1}\end{Vmatrix}-\begin{Vmatrix}P_{k|k}\end{Vmatrix}
-#
-# 
-# where :math:`P_{k|k-1}` and :math:`P_{k|k}` are the covariance matrices for the prediction and update of the track
-# respectively. Note that :math:`\begin{Vmatrix}P_{k|k-1}\end{Vmatrix}` and :math:`\begin{Vmatrix}P_{k|k}\end{Vmatrix}`
-# represent the Frobenius norms of these covariance matrices.
 
 from stonesoup.sensormanager import BruteForceSensorManager
-
 import itertools as it
-from functools import partial
-from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
-from typing import Callable
 
 
-class TargetBasedBruteForceManager(Base):
-    sensors: set = Property(doc="Set of sensors in use")
+class TargetBasedBruteForceManager(BruteForceSensorManager):
     predictor: KalmanPredictor = Property()
-    #     updater: ExtendedKalmanUpdater = Property()
-    reward_function: Callable = Property()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -400,9 +325,9 @@ class TargetBasedBruteForceManager(Base):
 # %%
 # Reward function
 # """""""""""""""
-# The :class:`RewardFunction` calculates the difference between the covariance matrix norms of the
-# prediction and the posterior assuming a predicted measurement corresponding to that prediction. The
-# :meth:`reward_list` function then generates a list of this metric for every track.
+# The :class:`RewardFunction` is the same as in the previous tutorials and calculates the difference between
+# the covariance matrix norms of the
+# prediction and the posterior assuming a predicted measurement corresponding to that prediction.
 
 from stonesoup.models.measurement.nonlinear import CartesianToBearingRange
 
@@ -482,30 +407,30 @@ class RewardFunction(Base):
 # Initiate sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# Create an instance of each sensor manager class. Each class takes in a `action_list`, a list of the possible actions
-# to select from. Here this is the possible target numbers the manager can choose to observe. The
-# :class:`UncertaintyManager` also requires a predictor and an updater.
+# Create an instance of each sensor manager class. As in the previous tutorials each class takes in a
+# set of `sensors`, and the :class:`TargetBasedBruteForceManager` takes in a callable reward function.
+# Additionally, each sensor manager requires a predictor for estimating the angles to targets.
 
 randomactionmanager = TargetBasedRandomManager(sensor_setA, predictor)
 
 # initiate reward function
 reward_function = RewardFunction(predictor, updater)
 
-bruteforceactionmanager = TargetBasedBruteForceManager(sensor_setB,
-                                                       predictor,
-                                                       reward_function=reward_function.calculate_reward)
+bruteforceactionmanager = TargetBasedBruteForceManager(sensors=sensor_setB,
+                                                       reward_function=reward_function.calculate_reward,
+                                                       predictor=predictor)
 
 # %%
 # Run the sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^^
 #
-# From here the method differs slightly for each sensor manager. :class:`RandomManager` does not require any other input
-# variables whereas :class:`UncertaintyManager` requires a tracks list at each time step.
+# From here the method is the same as in the previous sensor management tutorials.
 # 
-# For both sensor management methods, at each time step a prediction is made for each of the targets except the chosen
-# target,  which is updated. These states are appended to the tracks list.
+# For both sensor management methods, at each time step the chosen action is given to the sensors
+# and then measurements taken. The tracks are updated based on these measurements with predictions made
+# for tracks which have not been observed.
 # 
-# The ground truths, tracks and uncertainty ellipses are then plotted.
+# First a hypothesiser and data associator are required for use in both trackers.
 #
 
 from stonesoup.hypothesiser.distance import DistanceHypothesiser
@@ -516,11 +441,12 @@ from stonesoup.dataassociator.neighbour import GNNWith2DAssignment
 data_associator = GNNWith2DAssignment(hypothesiser)
 
 # %%
-# Run random sensor manager
-# """""""""""""""""""""""""
+# Run target based random sensor manager
+# """"""""""""""""""""""""""""""""""""""
 #
 # Here the chosen target for observation is selected randomly using the method :meth:`choose_actions()` from the class
-# :class:`RandomManager`.
+# :class:`TargetBasedRandomManager`. This returns a mapping of sensors to actions where actions are a direction
+# for the sensor to point in, selected randomly.
 
 from ordered_set import OrderedSet
 
@@ -560,7 +486,8 @@ for timestep in timesteps[1:]:
             track.append(hypothesis.prediction)
 
 # %%
-# Plot ground truths, tracks and uncertainty ellipses for each target. 
+# Plot ground truths, tracks and uncertainty ellipses for each target. The positions of the sensors are
+# indicated by black x markers.
 
 from matplotlib.lines import Line2D
 from stonesoup.plotter import Plotter
@@ -578,26 +505,37 @@ plotterA.plot_ground_truths(truths_set, [0, 2])
 plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 
 # %%
-# Run brute force sensor manager
-# """"""""""""""""""""""""""""""
+# In comparison to the previous tutorials the performance of the random sensor mangement method has improved. For the
+# same scenario and same number of sensors the tracks are better with smaller uncertainty. This is because the
+# random choice is not chosen from any direction the sensor could possibly point in but from any direction that is
+# estimated to point at a target. This improves the performance of the algorithm as an observation is much more likely.
 #
-# Here the chosen target for observation is selected based on the difference between the covariance matrices of the
-# prediction and posterior, based upon the observation of that target.
+# Run target based brute force sensor manager
+# """""""""""""""""""""""""""""""""""""""""""
 #
-# The :meth:`choose_actions` function from the :class:`UncertaintyManager` is called at each time step. This means
-# that at each time step, for each target:
+# Here the direction for observation is selected based on the difference between the covariance matrices of the
+# prediction and the update of predicted measurement, for targets which could be observed by the sensor
+# pointing in the given direction.
 #
-#  * A prediction is made and the covariance matrix norms stored
-#  * A predicted measurement is made
-#  * A synthetic detection is generated from this predicted measurement
-#  * A hypothesis generated based on the detection and prediction
-#  * This hypothesis is used to do an update and the covariance matrix norms of the update are stored
-#  * The difference between these covariance matrix norms is calculated
+# Within the sensor manager a dictionary is created of sensors and the actions they can take which would result in
+# the sensor pointing at a target.
+# When the :meth:`choose_actions` function is called (at each time step), for each track in the tracks list:
 #
-# The sensor manager then returns the target with the largest value of this metric as the chosen target to observe.
+# * A prediction is made and the covariance matrix norms stored
+# * The angle from the sensor to the prediction is calculated to establish if it within the field of view
+# * If it is in the field of view a predicted measurement is made
+# * A synthetic detection is generated from this predicted measurement
+# * A hypothesis generated based on the detection and prediction
+# * This hypothesis is used to do an update and the covariance matrix norms of the update are stored.
 #
-# The prediction for each target is appended to the tracks list at each time step, except for the chosen target for
-# which an update is appended.
+# The metric `config_metric` is calculated as the sum of the differences between these covariance matrix norms
+# for the tracks observed by the possible action configuration. The sensor manager identifies the
+# configuration which results in the largest value of this metric and therefore
+# largest reduction in uncertainty. It returns the optimum sensors/actions configuration as a dictionary.
+#
+# The actions are given to the sensors, measurements made and
+# the tracks updated based on these measurements. Predictions are made for tracks
+# which have not been observed by the sensors.
 
 for timestep in timesteps[1:]:
 
@@ -646,14 +584,15 @@ plotterB.plot_ground_truths(truths_set, [0, 2])
 plotterB.plot_tracks(set(tracksB), [0, 2], uncertainty=True)
 
 # %%
-# The smaller uncertainty ellipses in this plot suggest that the :class:`UncertaintyManager` provides a much
-# better track than the :class:`RandomManager`.
+# It is clear from these initial plots that the brute force method produces better tracks than the random method.
+# The smaller uncertainty ellipses suggest that the :class:`TargetBasedBruteForceManager` provides a much
+# better track than the :class:`TargetBasedRandomManager`.
 #
 # Metrics
 # -------
 # 
-# Metrics can be used to compare how well different sensor management techniques are working. Full explanations of the OSPA
-# and SIAP metrics can be found in the Metrics Example.
+# Metrics can be used to compare how well different sensor management techniques are working. Full explanations of
+# the OSPA and SIAP metrics can be found in the Metrics Example.
 
 from stonesoup.metricgenerator.ospametric import OSPAMetric
 ospa_generator = OSPAMetric(c=40, p=1)
@@ -668,12 +607,7 @@ from stonesoup.metricgenerator.uncertaintymetric import SumofCovarianceNormsMetr
 uncertainty_generator = SumofCovarianceNormsMetric()
 
 # %%
-# A metric manager is used for the generation of metrics on multiple :class:`~.GroundTruthPath` and
-# :class:`~.Track` objects. This takes in the metric generators, as well as the associator required for the
-# SIAP metrics.
-# 
-# We must use a different metric manager for each sensor management method. This is because each sensor manager
-# generates different track data which is then used in the metric manager.
+# Generate a metrics manager for each sensor management method.
 
 from stonesoup.metricgenerator.manager import SimpleManager
 
@@ -717,9 +651,8 @@ ax.set_xlabel("Time")
 ax.legend()
 
 # %%
-# OSPA distance starts large due to the position offset in the priors and then improves for both scenarios as
-# observations are made. The :class:`UncertaintyManager` generally results in a smaller OSPA distance than the random
-# observations of the :class:`RandomManager`.
+# The OSPA distnce for the :class:`TargetBasedBruteForceManager` is generally smaller than for the random observations
+# of the :class:`TargetBasedRandomManager`.
 #
 # SIAP metrics
 # ^^^^^^^^^^^^
@@ -765,13 +698,8 @@ axes[1].plot(times, [metric.value for metric in va_metricB.value],
 axes[1].legend()
 
 # %%
-# Similar to the OSPA distances, positional accuracy starts as quite poor for both scenarios due to the offset in the
-# priors, and then improves over time as observations are made. Again the :class:`UncertaintyManager`
-# generally results in a better positional accuracy than the random observations of the :class:`RandomManager`.
-# 
-# Velocity accuracy also starts quite poor due to an error in the priors. It improves over time as more observations
-# are made, then remains relatively similar for each sensor manager. This is because the velocity remains nearly
-# constant throughout the simulation. This is not likely to be the case in a real-world scenario.
+# Similar to the OSPA distance the :class:`TargetBasedBruteForceManager` generally results in both a better
+# positional accuracy and velocity accuracy than the random observations of the :class:`TargetBasedRandomManager`.
 #
 # Uncertainty metric
 # ^^^^^^^^^^^^^^^^^^
@@ -797,23 +725,7 @@ ax.legend()
 # sphinx_gallery_thumbnail_number = 6
 
 # %%
-# This metric shows that the uncertainty in the tracks generated by the :class:`RandomManager` is much greater
-# than for those generated by the :class:`UncertaintyManager`. This is also reflected by the uncertainty ellipses
+# This metric shows that the uncertainty in the tracks generated by the :class:`TargetBasedRandomManager` is
+# generally greater than for those generated by the :class:`TargetBasedBruteForceManager`.
+# This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
-# 
-# The uncertainty for the :class:`UncertaintyManager` peaks initially then remains at a constant value. This peak
-# is because the priors given are offset but have a small uncertainty meaning uncertainty increases when the first
-# observations are made. This simulation is quite clean and the uncertainty of each track increases by the same
-# amount if left unobserved. Since the sensor manager is then making observations based on this uncertainty, it is
-# reducing it by the same amount each time. This means the total uncertainty in the system is constant.
-
-# %%
-# References
-# ----------
-#
-# .. [#] *Hero, A.O., Castanon, D., Cochran, D. and Kastella, K.*, **Foundations and Applications of Sensor
-#    Management**. New York: Springer, 2008.
-# .. [#] *D. Schuhmacher, B. Vo and B. Vo*, **A Consistent Metric for Performance Evaluation of
-#    Multi-Object Filters**, IEEE Trans. Signal Processing 2008
-# .. [#] *Votruba, Paul & Nisley, Rich & Rothrock, Ron and Zombro, Brett.*, **Single Integrated Air
-#    Picture (SIAP) Metrics Implementation**, 2001
