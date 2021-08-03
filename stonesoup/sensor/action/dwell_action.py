@@ -48,14 +48,10 @@ class DwellActionsGenerator(ActionGenerator):
     owner: object = Property()
     start_time: datetime.datetime = Property()
     end_time: datetime.datetime = Property()
+    resolution: Angle = Property()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.resolution = Angle(np.radians(30))
-
-    def __call__(self, resolution=None):
-        if resolution is not None:
-            self.resolution = resolution
 
     @property
     def duration(self):

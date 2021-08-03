@@ -134,7 +134,8 @@ for n in range(0, total_no_sensors):
         position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
-        dwell_centre=State([0.0], start_time)
+        dwell_centre=State([0.0], start_time),
+        resolution=np.radians(30)
     )
     sensor_setA.add(sensor)
 
@@ -149,7 +150,8 @@ for n in range(0, total_no_sensors):
         position=np.array([[10], [n * 50]]),
         rpm=60,
         fov=np.radians(30),
-        dwell_centre=State([0.0], start_time)
+        dwell_centre=State([0.0], start_time),
+        resolution=np.radians(30)
     )
     sensor_setB.add(sensor)
 # %%

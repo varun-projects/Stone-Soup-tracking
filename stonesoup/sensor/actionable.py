@@ -12,12 +12,14 @@ from stonesoup.sensor.radar import RadarBearingRange
 from stonesoup.types.array import StateVector
 from stonesoup.types.detection import TrueDetection
 from stonesoup.types.state import State
+from stonesoup.types.angle import Angle
 
 
 class SimpleRadar(RadarBearingRange):
     dwell_centre: State = Property()
     rpm: float = Property()
     fov: float = Property()
+    resolution: Angle = Property(default=np.radians(1))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -162,4 +164,5 @@ class SimpleRadar(RadarBearingRange):
 
         return {DwellActionsGenerator(dwell_centre=self.dwell_centre, rpm=self.rpm, fov=self.fov,
                                       owner=self,
-                                      start_time=self.dwell_centre.timestamp, end_time=timestamp)}
+                                      start_time=self.dwell_centre.timestamp, end_time=timestamp,
+                                      resolution=self.resolution)}

@@ -182,7 +182,8 @@ sensorA = SimpleRadar(
     position=np.array([[10], [0]]),
     rpm=60,
     fov=np.radians(30),
-    dwell_centre=State([0.0], start_time)
+    dwell_centre=State([0.0], start_time),
+    resolution=np.radians(30)
 )
 
 sensorB = SimpleRadar(
@@ -193,7 +194,8 @@ sensorB = SimpleRadar(
     position=np.array([[10], [0]]),
     rpm=60,
     fov=np.radians(30),
-    dwell_centre=State([0.0], start_time)
+    dwell_centre=State([0.0], start_time),
+    resolution=np.radians(30)
 )
 
 # %%
