@@ -24,7 +24,7 @@
 # update is used (if necessary) to determine the next action for the sensing system to take.
 # 
 # A simple example can be imagined using a sensor with a limited field of view which must decide which direction
-# it should point at each time step. Alternatively, we might construct an objective based example by imagining
+# it should point in at each time step. Alternatively, we might construct an objective based example by imagining
 # that the desired target is fast moving and the sensor can only observe one target at a time. If there are
 # multiple targets which could be observed the sensor manager could choose to observe the target that had the
 # greatest estimated velocity at the current time.
@@ -81,7 +81,7 @@
 # Comparing sensor management methods using metrics
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# The performance of the two sensor management methods explored in this notebook can be assessed using metrics
+# The performance of the two sensor management methods explored in this tutorial can be assessed using metrics
 # available from the Stone Soup framework. The metrics used to assess the performance of the different methods
 # are the OPSA metric [#]_, SIAP metrics [#]_ and an uncertainty metric. Demonstration of the OSPA and SIAP metrics
 # can be found in the Metrics Example.
@@ -117,8 +117,6 @@ from stonesoup.types.detection import Detection
 # 
 # Following the methods from previous Stone Soup tutorials we generate a series of combined linear Gaussian transition
 # models and generate ground truths. Each ground truth is offset in the y-direction by 10.
-# 
-# Ground truths are assigned an ID. This is later used by the data associator for the metrics.
 # 
 # The number of targets in this simulation is defined by `n_truths` - here there are 10 targets. The time the
 # simulation is observed for is defined by `time_max`.
@@ -232,8 +230,6 @@ for j in range(0, ntruths):
 # %%
 # Initialise the tracks by creating an empty list and appending the priors generated. This needs to be done separately
 # for both sensor manager methods as they will generate different sets of tracks.
-#
-# (NB: Tracks are also assigned an ID, used later for data association)
 
 from stonesoup.types.track import Track
 
@@ -270,8 +266,8 @@ from stonesoup.sensormanager import RandomSensorManager
 # 
 # The second method :class:`~.BruteForceSensorManager` iterates through every possible action a sensor can take at a
 # given time step and selects the action(s) which give the maximum reward as calculated by the reward function.
-# In this example the reward function is written such that the sensor
-# manager chooses a direction for the sensor to point in such that the total uncertainty of the tracks will be
+# In this example the reward function is used to select a direction for the sensor to point in
+# such that the total uncertainty of the tracks will be
 # reduced the most by making an observation in that direction.
 
 from stonesoup.sensormanager import BruteForceSensorManager
@@ -292,6 +288,7 @@ class RewardFunction(Base):
                                                   "the track to the new state.")
 
     def calculate_reward(self, config, tracks_list, metric_time):
+        # i.e. Rk(x, a)
 
         # Reward value
         config_metric = 0
@@ -379,7 +376,7 @@ bruteforcesensormanager = BruteForceSensorManager({sensorB},
 # ^^^^^^^^^^^^^^^^^^^^^^^
 #
 # From here the method differs slightly for each sensor manager. For both methods the :meth:`choose_actions`
-# requires a time step, whilst the :class:`~.RandomSensorManager` does not
+# function requires a time step, whilst the :class:`~.RandomSensorManager` does not
 # require any other input
 # variables the :class:`~.BruteForceSensorManager` also requires a tracks list at each time step.
 # 
@@ -416,6 +413,7 @@ for state in truths[0]:
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
+    # i.e. {a}k
     chosen_action = randomsensormanager.choose_actions(timestep)
 
     # Create empty dictionary for measurements
@@ -427,6 +425,7 @@ for timestep in timesteps[1:]:
     sensorA.act(timestep)
 
     # Observe this ground truth
+    # i.e. {z}k
     measurements = sensorA.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
     measurementsA.extend(measurements)
 
@@ -488,6 +487,7 @@ plotterA.plot_tracks(set(tracksA), [0, 2], uncertainty=True)
 for timestep in timesteps[1:]:
 
     # Generate chosen configuration
+    # i.e. {a}k
     chosen_actions = bruteforcesensormanager.choose_actions(tracksB, timestep)
 
     # Create empty dictionary for measurements
@@ -500,6 +500,7 @@ for timestep in timesteps[1:]:
     sensorB.act(timestep)
 
     # Observe this ground truth
+    # i.e. {z}k
     measurements = sensorB.measure(OrderedSet(truth[timestep] for truth in truths), noise=True)
     measurementsB.extend(measurements)
 
@@ -548,7 +549,7 @@ siap_generator = SIAPMetrics(position_mapping=[0, 2], velocity_mapping=[1, 3])
 
 # %%
 # The SIAP metrics require an associator to associate tracks to ground truths. This is done using the
-# :class:`~.TrackToTruth` associator.
+# :class:`~.TrackToTruth` associator with an association threshold of 30.
 
 from stonesoup.dataassociator.tracktotrack import TrackToTruth
 associator = TrackToTruth(association_threshold=30)
@@ -623,9 +624,9 @@ ax.legend()
 #
 # Next we look at SIAP metrics. This can be done by generating a table which displays all the SIAP metrics computed,
 # as seen in the Metrics Example.
-# 
-# Completeness, ambiguity and spuriousness are not relevant for this example because we are not initiating and
-# deleting tracks and we have one track corresponding to each ground truth.
+# However, completeness, ambiguity and spuriousness are not relevant for this example because we are not initiating and
+# deleting tracks and we have one track corresponding to each ground truth. Here we only plot positional accuracy and
+# velocity accuracy over time.
 
 fig, axes = plt.subplots(2)
 
@@ -694,7 +695,7 @@ ax.legend()
 # than for those generated by the :class:`~.BruteForceSensorManager`. This is also reflected by the uncertainty ellipses
 # in the initial plots of tracks and truths.
 # 
-# The uncertainty for the :class:`~.BruteForceSensorManager` initially remains small but can begin to increase
+# The uncertainty for the :class:`~.BruteForceSensorManager` remains small but can begin to increase
 # towards the end of the simulation in some scenarios. This could be due to a small number of targets going unobserved
 # for too long and the estimated location being too far from the truth. This could result in the sensor manager
 # pointing the sensor in a direction in which the manager thinks it will observe a target but the target

@@ -9,10 +9,10 @@
 
 # %%
 #
-# This notebook follows on from Sensor Management Tutorial 1 and further explores how existing
+# This notebook follows on from the Single Sensor Management tutorial and further explores how existing
 # Stone Soup features can be used to build simple sensor management algorithms for tracking and
 # state estimation. This second tutorial demonstrates the limitations of the brute force optimisation
-# method introduced in Tutorial 1 by increasing the number of sensors used in the scenario.
+# method introduced in the previous tutorial by increasing the number of sensors used in the scenario.
 #
 # Introducing multiple sensors
 # ----------------------------
@@ -206,7 +206,7 @@ for j, prior in enumerate(priors):
 # Create sensor managers
 # ^^^^^^^^^^^^^^^^^^^^^^
 #
-# Next we create our sensor management classes. As is Tutorial 1 two sensor manager classes are used -
+# Next we create our sensor management classes. As is Tutorial 1, two sensor manager classes are used -
 # :class:`~.RandomSensorManager` and :class:`~.BruteForceSensorManager`.
 #
 # Random sensor manager

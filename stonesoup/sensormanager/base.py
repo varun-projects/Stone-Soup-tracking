@@ -8,12 +8,13 @@ import itertools as it
 
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
+from ..sensor.action import Action
 
 
 class SensorManager(Base, ABC):
     """The sensor manager base class.
 
-    The purpose of a sensor manager is to return a set of sensor actions appropriate to a specific
+    The purpose of a sensor manager is to return a mapping of sensors and sensor actions appropriate to a specific
     scenario and with a particular objective, or objectives, in mind. This involves using
     estimates of the situation and knowledge of the sensor system to calculate metrics associated
     with actions, and then determine optimal, or near optimal, actions to take.
@@ -41,7 +42,7 @@ class SensorManager(Base, ABC):
 
         Returns
         -------
-        : dict {Sensor: [Action]}
+        : dict {:class:`~.Sensor`: [:class:`~.Action`]}
             Key-value pairs of the form 'sensor: actions'. In the general case a sensor may be
             given a single action, or a list. The actions themselves are objects which must be
             interpretable by the sensor to which they are assigned.
@@ -72,7 +73,7 @@ class RandomSensorManager(SensorManager):
         Returns
         -------
         : dict
-            The pairs of {sensor: action(s) selected}
+            The pairs of :class:`~.Sensor`: [:class:`~.Action`] selected
         """
         sensor_action_assignment = dict()
 
@@ -121,7 +122,8 @@ class BruteForceSensorManager(SensorManager):
         Returns
         -------
         : dict
-            The pairs of {sensor: action(s) selected}"""
+            The pairs of :class:`~.Sensor`: [:class:`~.Action`] selected
+        """
 
         all_action_choices = dict()
 
