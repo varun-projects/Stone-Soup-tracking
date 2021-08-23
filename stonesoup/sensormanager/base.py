@@ -13,7 +13,8 @@ from ..sensor.sensor import Sensor
 class SensorManager(Base, ABC):
     """The sensor manager base class.
 
-    The purpose of a sensor manager is to return a mapping of sensors and sensor actions appropriate to a specific
+    The purpose of a sensor manager is to return a mapping of sensors and sensor actions
+    appropriate to a specific
     scenario and with a particular objective, or objectives, in mind. This involves using
     estimates of the situation and knowledge of the sensor system to calculate metrics associated
     with actions, and then determine optimal, or near optimal, actions to take.
