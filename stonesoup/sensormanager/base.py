@@ -8,7 +8,6 @@ import itertools as it
 
 from ..base import Base, Property
 from ..sensor.sensor import Sensor
-from ..sensor.action import Action
 
 
 class SensorManager(Base, ABC):
