@@ -172,7 +172,7 @@ class Plotter:
         self.ax.legend(handles=self.handles_list, labels=self.labels_list)
 
     def plot_tracks(self, tracks, mapping, uncertainty=False, particle=False, track_label="Track",
-                    **kwargs):
+                    same_colour = False, **kwargs):
         """Plots track(s)
 
         Plots each track generated, generating a legend automatically. If ``uncertainty=True``,
@@ -196,6 +196,8 @@ class Plotter:
             If True, function plots particles.
         track_label: str
             Label to apply to all tracks for legend.
+        same_colour: bool
+            Should all the tracks have the same colour
         \\*\\*kwargs: dict
             Additional arguments to be passed to plot function. Defaults are ``linestyle="-"``,
             ``marker='.'`` and ``color=None``.
@@ -213,6 +215,8 @@ class Plotter:
                                 [state.state_vector[mapping[1]] for state in track],
                                 **tracks_kwargs)
             track_colors[track] = plt.getp(line[0], 'color')
+            if same_colour:
+                tracks_kwargs['color'] = plt.getp(line[0], 'color')
 
         # Assuming a single track or all plotted as the same colour then the following will work.
         # Otherwise will just render the final track colour.
