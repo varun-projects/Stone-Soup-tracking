@@ -12,7 +12,7 @@ from ...types.numeric import Probability
 
 from ...functions import cart2pol, pol2cart, \
     cart2sphere, sphere2cart, cart2angles, \
-    rotx, roty, rotz
+    rotx, roty, rotz, build_rotation_matrix, cartrate2sphererate, sphererate2cartrate, jacobian as compute_jacobian
 from ...types.array import StateVector, CovarianceMatrix, StateVectors
 from ...types.angle import Bearing, Elevation
 from ..base import LinearModel, GaussianModel, ReversibleModel
@@ -976,6 +976,265 @@ class CartesianToElevationBearingRangeRate(NonLinearGaussianMeasurement, Reversi
         out = super().rvs(num_samples, **kwargs)
         out = np.array([[Elevation(0)], [Bearing(0)], [0.], [0.]]) + out
         return out
+
+
+class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurement, ReversibleModel):
+    r"""This is a class implementation of a time-invariant measurement model, \
+    where statesgit  are assumed to be received in the form of bearing \
+    (:math:`\phi`), bearing rate (:math:`\dot{\phi}`) elevation (:math:`\theta`),\ 
+    elevation rate (:math:`\dot{\theta}`), range (:math:`r`) and range rate (:math:`\dot{r}`), with \
+    Gaussian noise in each dimension.
+
+    The model is described by the following equations:
+
+    .. math::
+
+      \vec{y}_t = h(\vec{x}_t, \vec{v}_t)
+
+    where:
+
+    * :math:`\vec{y}_t` is a measurement vector of the form:
+
+    .. math::
+
+      \vec{y}_t = \begin{bmatrix}
+                \theta \\
+                \dot{\theta}\\
+                \phi \\
+                \dot{\phi}\\
+                r\\
+                \dot{r}
+            \end{bmatrix}
+
+    * :math:`h` is a non-linear model function of the form:
+
+    .. math::
+
+      h(\vec{x}_t,\vec{v}_t) = \begin{bmatrix}
+                \arcsin\left(\frac{\mathcal{z}}{\sqrt{\mathcal{x}^2 + \mathcal{y}^2 +\mathcal{z}^2}}\right) \\
+                \frac{\frac{\dot{\mathcal{z}}}{\sqrt{\mathcal{x}^2+\mathcal{y}^2+\mathcal{z}^2}}-\frac{\mathcal{z}\left(2\mathcal{x}\dot{\mathcal{x}}+2\mathcal{y}\dot{\mathcal{y}}+2\mathcal{z}\dot{\mathcal{z}}\right)}{2(\mathcal{x}^2+\mathcal{y}^2+\mathcal{z}^2)^\frac{3}{2}}}{\sqrt{1-\frac{\mathcal{z}^2}{\mathcal{x}^2+\mathcal{y}^2+\mathcal{z}^2}}}\\
+                \arctan2(\mathcal{y},\mathcal{x}) \\
+                \frac{\mathcal{x}\dot{\mathcal{y}}- \mathcal{y}\dot{\mathcal{x}}}{\mathcal{x}^2+\mathcal{y}^2}\\
+                \sqrt{\mathcal{x}^2 + \mathcal{y}^2 + \mathcal{z}^2}\\
+                \frac{\mathcal{x}\dot{\mathcal{x}}+\mathcal{y}\dot{\mathcal{y}}+\mathcal{z}\dot{\mathcal{z}}}{\sqrt{\mathcal{x}^2+\mathcal{y}^2+\mathcal{z}^2}}
+                \end{bmatrix} + \vec{v}_t
+
+    * :math:`\vec{v}_t` is Gaussian distributed with covariance :math:`R`, i.e.:
+
+    .. math::
+
+      \vec{v}_t \sim \mathcal{N}(0,R)
+
+    .. math::
+
+      R = \begin{bmatrix}
+            \sigma_{\theta}^2 & 0 & 0 & 0 & 0 & 0\\
+            0 & \sigma_{\dot{\theta}}^2 & 0 & 0 & 0 & 0\\
+            0 & 0 & \sigma_{\phi}^2 & 0 & 0  & 0 \\
+            0 & 0 & 0 & \sigma_{\dot{\phi}}^2 & 0 & 0 \\
+            0 & 0 & 0 & 0& \sigma_{\mathcal{r}}^2  & 0\\
+            0 & 0 & 0 & 0 & 0 & \sigma_{\dot{\mathcal{r}}}^2
+            \end{bmatrix}
+
+    The :py:attr:`mapping` property of the model is the 6 element vector, \
+    whose elements contain the state index of the :math:`x`, :math:`\dot{x}`, \ 
+    :math:`y`, :math:`\dot{y}`, :math:`z` and :math:`\dot{z}`  \
+    coordinates, respectively.
+
+    Note
+    ----
+    The current implementation of this class assumes a 3D Cartesian plane.
+
+    """  # noqa:E501
+
+    translation_offset: StateVector = Property(
+        default=None,
+        doc="A 3x1 array specifying the Cartesian origin offset in terms of :math:`x,y,z` "
+            "coordinates.")
+
+    def __init__(self, *args, **kwargs):
+        """
+        Ensure that the translation offset is initiated as a 6-dimension vector.
+        """
+        super().__init__(*args, **kwargs)
+        # Set values to defaults if not provided
+        if self.translation_offset is None:
+            self.translation_offset = StateVector([0] * 6)
+        if len(self.translation_offset) == 3:
+            self.translation_offset = np.array([[1, 0, 0], [0, 0, 0], [0, 1, 0],
+                                                [0, 0, 0], [0, 0, 1], [0, 0, 0]]) @ self.translation_offset
+        if len(self.translation_offset) == 2:
+            self.translation_offset = np.array([[1, 0], [0, 0], [0, 1],
+                                                [0, 0], [0, 0], [0, 0]]) @ self.translation_offset
+        self.rot_resize = np.array([[1, 0, 0], [0, 0, 0], [0, 1, 0],
+                                    [0, 0, 0], [0, 0, 1], [0, 0, 0]])
+        self.mapping = (0, 1, 2, 3, 4, 5)
+
+    @property
+    def ndim_meas(self) -> int:
+        """ndim_meas getter method
+
+        Returns
+        -------
+        :class:`int`
+            The number of measurement dimensions
+        """
+
+        return 6
+
+    @property
+    def _rotation_matrix(self) -> np.ndarray:
+        """_rotation_matrix getter method
+
+        Calculates and returns the (3D) axis rotation matrix for full 3d 6-state state vector of position and velocity.
+
+        Returns
+        -------
+        :class:`numpy.ndarray` of shape (6, 6)
+            The model (3D) rotation matrix.
+        """
+        RR = block_diag(build_rotation_matrix(self.rotation_offset), build_rotation_matrix(self.rotation_offset))
+        A = np.array([[1, 0, 0, 0, 0, 0],
+                      [0, 0, 0, 1, 0, 0],
+                      [0, 1, 0, 0, 0, 0],
+                      [0, 0, 0, 0, 1, 0],
+                      [0, 0, 1, 0, 0, 0],
+                      [0, 0, 0, 0, 0, 1]])
+        return A @ RR @ A.T
+
+    def function(self, state, **kwargs) -> StateVector:
+        r"""Model function :math:`h(\vec{x}_t,\vec{v}_t)`
+
+        Parameters
+        ----------
+        state: :class:`~.State`
+            An input state
+
+        Returns
+        -------
+        :class:`numpy.ndarray` of shape (:py:attr:`~ndim_state`, 1)
+            The model function evaluated given the provided time interval.
+        """
+
+        # Account for origin offset
+        # self.mapping is (0,1,2,3,4,5) and translation offset dimensions are 6 by 1
+        xyz = state.state_vector[self.mapping, :] - self.translation_offset
+
+        # Rotate coordinates
+        xyz_rot = self._rotation_matrix @ xyz
+
+        # Convert to Spherical
+        theta, dtheta, phi, dphi, rho, drho = cartrate2sphererate(*xyz_rot)
+        elevations = [Elevation(i) for i in np.atleast_1d(theta)]
+        bearings = [Bearing(i) for i in np.atleast_1d(phi)]
+        rhos = np.atleast_1d(rho)
+        drhos = np.atleast_1d(drho)
+        dbearings = np.atleast_1d(dphi)
+        delevations = np.atleast_1d(dtheta)
+
+        return StateVectors([elevations, delevations,
+                             bearings, dbearings,
+                             rhos, drhos])
+
+    def inverse_function(self, state, **kwargs) -> StateVector:
+        """Inverse function
+
+        Parameters
+        ----------
+        state: :class:`~.State`
+            An input state (in Spherical polar position and velocity)
+
+        Returns
+        -------
+        :class:`numpy.ndarray` of shape (:py:attr:`~ndim_state`, 1)
+            The inverse model function evaluated given the provided time interval.
+        """
+        theta, dtheta, phi, dphi, rho, drho = state.state_vector
+        xyz = StateVectors(sphererate2cartrate(
+            np.atleast_1d(theta),
+            np.atleast_1d(dtheta),
+            np.atleast_1d(phi),
+            np.atleast_1d(dphi),
+            np.atleast_1d(rho),
+            np.atleast_1d(drho)))
+
+        xyz = inv(self._rotation_matrix) @ xyz
+
+        res = xyz
+        res[self.mapping, :] = xyz[self.mapping, :] + self.translation_offset
+
+        return res
+
+    def cart2ebr(self, state):
+        """Conversion of Cartesian state to Spherical State function
+
+        Parameters
+        ----------
+        state: :class:`~.State`
+            An input state (Cartesian)
+
+        Returns
+        -------
+        :class:`~.State` in Spherical polar.
+        """
+
+        new_state = copy.deepcopy(state)
+        new_sv = self.function(state, noise=False)
+        new_sv[0] = Elevation(new_sv[0])
+        new_sv[2] = Bearing(new_sv[2])
+        J = self.jacobian(state)
+        new_covar = J @ state.covar @ J.T
+        new_state.state_vector = new_sv
+        new_state.covar = new_covar
+        return new_state
+
+    def ebr2cart(self, state):
+        """Conversion of Cartesian state to Spherical State function
+
+        Parameters
+        ----------
+        state: :class:`~.State`
+            An input state (Cartesian)
+
+        Returns
+        -------
+        :class:`~.State` in Spherical polar.
+        """
+
+        new_state = copy.deepcopy(state)
+        new_sv = self.inverse_function(state, noise=False)
+        J = self.jacobian(state, self.inverse_function)
+        new_covar = J @ state.covar @ J.T
+        new_state.state_vector = new_sv
+        new_state.covar = new_covar
+        return new_state
+
+    def jacobian(self, state, function=None, **kwargs):
+        """Model Jacobian matrix :math:`H_{jac}` using a given function. The aim of this updated version of the
+        function allows the use of defining either the function or the inverse_function when running the Jacobian
+        function.
+
+        Parameters
+        ----------
+        state : :class:`~.State`
+            An input state
+        function : function handle
+            A (non-linear) transition function
+            Must be of the form "y = fun(x)", where y can be a scalar or \
+            :class:`numpy.ndarray` of shape `(Nd, 1)` or `(Nd,)`
+
+        Returns
+        -------
+        :class:`numpy.ndarray` of shape (attr:`~ndim_meas`, :attr:`~ndim_state`)
+            The model Jacobian matrix evaluated around the given state vector.
+        """
+        if function is None:
+            function = self.function
+
+        def fun(x):
+            return function(x, **kwargs)
+
+        return compute_jacobian(fun, state)
 
 
 class RangeRangeRateBinning(CartesianToElevationBearingRangeRate):
