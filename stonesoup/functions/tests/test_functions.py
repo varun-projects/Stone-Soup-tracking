@@ -6,7 +6,8 @@ from pytest import approx, raises
 
 from .. import (
     cholesky_eps, jacobian, gm_reduce_single, mod_bearing, mod_elevation, gauss2sigma,
-    rotx, roty, rotz, cart2sphere, cart2angles, pol2cart, sphere2cart, dotproduct)
+    rotx, roty, rotz, cart2sphere, cart2angles, pol2cart, sphere2cart, dotproduct, cartrate2sphererate,
+    sphererate2cartrate)
 from ...types.array import StateVector, StateVectors, Matrix
 from ...types.state import State, GaussianState
 
@@ -264,3 +265,23 @@ def test_dotproduct(state_vector1, state_vector2):
                 out += a_i * b_i
 
             assert dotproduct(state_vector1, state_vector2) == out
+
+# TODO: Parametrise tests for more examples
+x = 1000.0; dx = 10.0; y = 1000.0; dy = 20.0; z = 8000.0; dz = 0.0
+r = 8124; dr = 4; phi = .7; dphi = 0.005; theta = 1.39; dtheta = -0.0025
+
+
+def test_cartrate2sphererate():
+    # TODO: Split the test to do single tests
+    sv_cart = StateVector([x, dx, y, dy, z, dz])
+    aa, ab, ac, ad, ae, af = cartrate2sphererate(*sv_cart)
+    sv_cart2ebr = StateVector([sphererate2cartrate(aa, ab, ac, ad, ae, af)])
+    assert np.allclose(sv_cart, sv_cart2ebr)
+
+
+def test_sphererate2cartrate():
+    # TODO: Split the test to do single tests
+    sv_ebr = StateVector([r, dr, phi, dphi, theta, dtheta])
+    aa, ab, ac, ad, ae, af = sphererate2cartrate(*sv_ebr)
+    sv_ebr2cart = StateVector([cartrate2sphererate(aa, ab, ac, ad, ae, af)])
+    assert np.allclose(sv_ebr, sv_ebr2cart, atol=.1)
