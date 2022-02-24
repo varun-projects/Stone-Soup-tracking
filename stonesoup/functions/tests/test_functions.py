@@ -6,8 +6,9 @@ from pytest import approx, raises
 
 from .. import (
     cholesky_eps, jacobian, gm_reduce_single, mod_bearing, mod_elevation, gauss2sigma,
-    rotx, roty, rotz, cart2sphere, cart2angles, pol2cart, sphere2cart, dotproduct, cartrate2sphererate,
-    sphererate2cartrate)
+    rotx, roty, rotz, cart2sphere, cart2angles, pol2cart, sphere2cart, dotproduct,
+    cartrate2sphererate, sphererate2cartrate
+)
 from ...types.array import StateVector, StateVectors, Matrix
 from ...types.state import State, GaussianState
 
@@ -266,22 +267,29 @@ def test_dotproduct(state_vector1, state_vector2):
 
             assert dotproduct(state_vector1, state_vector2) == out
 
-# TODO: Parametrise tests for more examples
-x = 1000.0; dx = 10.0; y = 1000.0; dy = 20.0; z = 8000.0; dz = 0.0
-r = 8124; dr = 4; phi = .7; dphi = 0.005; theta = 1.39; dtheta = -0.0025
+
+cart_vectors = [(1000.0, 10.0, 1000.0, 20.0, 8000.0, 0.0),  # test dtype=float
+                (1000, 10, 1000, 20, 8000, 0),  # test dtype=int
+                (0.1, 0.1, 0.1, 0.1, 0.1, 0.1),
+                (-1000.0, -10.0, -1000.0, -20.0, -8000.0, 10),
+                (0, 0, 0, 0, 0, 0)  # edge case
+                ]
+pol_vectors = [(1.3958, -0.0026, 0.7854, 0.0050, 8124.0384, 3.6927),
+               (1.3958, -0.0026, 0.7854, 0.0050, 8124.0384, 3.6927),
+               (0.6155, 0.0, 0.7854, 0.0, 0.1732, 0.1732),
+               (-1.3958, 0.0028, -2.3562, 0.0050, 8124.0384, -6.1546),
+               (0, 0, 0, 0, 0, 0)]
 
 
-def test_cartrate2sphererate():
-    # TODO: Split the test to do single tests
-    sv_cart = StateVector([x, dx, y, dy, z, dz])
-    aa, ab, ac, ad, ae, af = cartrate2sphererate(*sv_cart)
-    sv_cart2ebr = StateVector([sphererate2cartrate(aa, ab, ac, ad, ae, af)])
-    assert np.allclose(sv_cart, sv_cart2ebr)
+@pytest.mark.parametrize(('cart_vector', 'pol_vector'),
+                         zip(cart_vectors, pol_vectors))
+def test_cartrate2sphererate(cart_vector, pol_vector):
+    eval_pol_vector = cartrate2sphererate(*cart_vector)
+    assert np.allclose(eval_pol_vector, pol_vector, atol=1e-4)
 
 
-def test_sphererate2cartrate():
-    # TODO: Split the test to do single tests
-    sv_ebr = StateVector([r, dr, phi, dphi, theta, dtheta])
-    aa, ab, ac, ad, ae, af = sphererate2cartrate(*sv_ebr)
-    sv_ebr2cart = StateVector([cartrate2sphererate(aa, ab, ac, ad, ae, af)])
-    assert np.allclose(sv_ebr, sv_ebr2cart, atol=.1)
+@pytest.mark.parametrize(('cart_vector', 'pol_vector'),
+                         zip(cart_vectors, pol_vectors))
+def test_sphererate2cartrate(cart_vector, pol_vector):
+    eval_cart_vector = sphererate2cartrate(*pol_vector)
+    assert np.allclose(eval_cart_vector, cart_vector, atol=1)

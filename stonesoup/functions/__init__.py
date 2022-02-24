@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Mathematical functions used within Stone Soup"""
 import copy
+import warnings
 
 import numpy as np
 
@@ -336,7 +337,9 @@ def cart2sphere(x, y, z):
 
 
 def cartrate2sphererate(x, dx, y, dy, z, dz):
-    """Convert Cartesian coordinates to Spherical
+    """Convert Cartesian coordinates to Spherical.
+
+    Raises warning when converting positional 0-vector.
 
     Parameters
     ----------
@@ -357,9 +360,14 @@ def cartrate2sphererate(x, dx, y, dy, z, dz):
     -------
     (float, float, float, float, float, float)
         A tuple of the form `(elevation, elevationrate, bearing, bearingrate, range, rangerate)`
-        bearing (phi, dphi) and elevation (theta, dtheta) in radians. Elevation is measured from x, y plane
-
+        bearing (phi, dphi) and elevation (theta, dtheta) in radians. Elevation is measured from
+        x, y plane.
+        If cartesian position is 0-vector, returns polar 0-vector (for position and velocity).
     """
+
+    if x == y == z == 0:
+        warnings.warn("Cartesian 0-vector converted to polar-rate vector")
+        return 0, 0, 0, 0, 0, 0
 
     xyz = x ** 2 + y ** 2 + z ** 2
     xy = x ** 2 + y ** 2
@@ -369,7 +377,7 @@ def cartrate2sphererate(x, dx, y, dy, z, dz):
     drho = (x * dx + y * dy + z * dz) / rho
     dphi = (x * dy - y * dx) / xy
     dtheta = (xy * dz - z * (x * dx + y * dy)) / (xyz * np.sqrt(xy))
-    return (theta, dtheta, phi, dphi, rho, drho)
+    return theta, dtheta, phi, dphi, rho, drho
 
 
 def cart2angles(x, y, z):
@@ -468,10 +476,17 @@ def sphererate2cartrate(theta, dtheta, phi, dphi, rho, drho):
     x = rho*np.cos(phi)*np.cos(theta)
     y = rho*np.sin(phi)*np.cos(theta)
     z = rho*np.sin(theta)
-    dx = drho*np.cos(phi)*np.cos(theta) - rho*dphi*np.sin(phi)*np.cos(theta) - rho*dtheta*np.cos(phi)*np.sin(theta)
-    dy = drho*np.cos(phi)*np.cos(theta) + rho*dphi*np.cos(phi)*np.cos(theta) - rho*dtheta*np.sin(phi)*np.sin(theta)
+
+    dx = \
+        drho*np.cos(phi)*np.cos(theta) \
+        - rho*dphi*np.sin(phi)*np.cos(theta) \
+        - rho*dtheta*np.cos(phi)*np.sin(theta)
+    dy = \
+        drho*np.cos(phi)*np.cos(theta) \
+        + rho*dphi*np.cos(phi)*np.cos(theta) \
+        - rho*dtheta*np.sin(phi)*np.sin(theta)
     dz = drho*np.sin(theta) + rho*dtheta*np.cos(theta)
-    return (x, dx, y, dy, z, dz)
+    return x, dx, y, dy, z, dz
 
 
 def rotx(theta):
