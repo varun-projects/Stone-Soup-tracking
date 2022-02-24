@@ -12,7 +12,8 @@ from ...types.numeric import Probability
 
 from ...functions import cart2pol, pol2cart, \
     cart2sphere, sphere2cart, cart2angles, \
-    rotx, roty, rotz, build_rotation_matrix, cartrate2sphererate, sphererate2cartrate, jacobian as compute_jacobian
+    rotx, roty, rotz, build_rotation_matrix, cartrate2sphererate, sphererate2cartrate,\
+    jacobian as compute_jacobian
 from ...types.array import StateVector, CovarianceMatrix, StateVectors
 from ...types.angle import Bearing, Elevation
 from ..base import LinearModel, GaussianModel, ReversibleModel
@@ -978,12 +979,12 @@ class CartesianToElevationBearingRangeRate(NonLinearGaussianMeasurement, Reversi
         return out
 
 
-class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurement, ReversibleModel):
-    r"""This is a class implementation of a time-invariant measurement model, \
-    where statesgit  are assumed to be received in the form of bearing \
-    (:math:`\phi`), bearing rate (:math:`\dot{\phi}`) elevation (:math:`\theta`),\ 
-    elevation rate (:math:`\dot{\theta}`), range (:math:`r`) and range rate (:math:`\dot{r}`), with \
-    Gaussian noise in each dimension.
+class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurement,
+                                                       ReversibleModel):
+    r"""This is a class implementation of a time-invariant measurement model, where states are
+    assumed to be received in the form of bearing (:math:`\phi`), bearing rate
+    (:math:`\dot{\phi}`) elevation (:math:`\theta`), elevation rate (:math:`\dot{\theta}`), range
+    (:math:`r`) and range rate (:math:`\dot{r}`), with Gaussian noise in each dimension.
 
     The model is described by the following equations:
 
@@ -1036,10 +1037,9 @@ class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurem
             0 & 0 & 0 & 0 & 0 & \sigma_{\dot{\mathcal{r}}}^2
             \end{bmatrix}
 
-    The :py:attr:`mapping` property of the model is the 6 element vector, \
-    whose elements contain the state index of the :math:`x`, :math:`\dot{x}`, \ 
-    :math:`y`, :math:`\dot{y}`, :math:`z` and :math:`\dot{z}`  \
-    coordinates, respectively.
+    The :py:attr:`mapping` property of the model is the 6 element vector, whose elements contain
+    the state index of the :math:`x`, :math:`\dot{x}`, :math:`y`, :math:`\dot{y}`, :math:`z` and
+    :math:`\dot{z}` coordinates, respectively.
 
     Note
     ----
@@ -1053,16 +1053,16 @@ class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurem
             "coordinates.")
 
     def __init__(self, *args, **kwargs):
-        """
-        Ensure that the translation offset is initiated as a 6-dimension vector.
-        """
+
         super().__init__(*args, **kwargs)
         # Set values to defaults if not provided
+        # Ensure that the translation offset is initiated as a 6-dimension vector.
         if self.translation_offset is None:
             self.translation_offset = StateVector([0] * 6)
         if len(self.translation_offset) == 3:
-            self.translation_offset = np.array([[1, 0, 0], [0, 0, 0], [0, 1, 0],
-                                                [0, 0, 0], [0, 0, 1], [0, 0, 0]]) @ self.translation_offset
+            self.translation_offset = \
+                np.array([[1, 0, 0], [0, 0, 0], [0, 1, 0],
+                          [0, 0, 0], [0, 0, 1], [0, 0, 0]]) @ self.translation_offset
         if len(self.translation_offset) == 2:
             self.translation_offset = np.array([[1, 0], [0, 0], [0, 1],
                                                 [0, 0], [0, 0], [0, 0]]) @ self.translation_offset
@@ -1086,14 +1086,16 @@ class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurem
     def _rotation_matrix(self) -> np.ndarray:
         """_rotation_matrix getter method
 
-        Calculates and returns the (3D) axis rotation matrix for full 3d 6-state state vector of position and velocity.
+        Calculates and returns the (3D) axis rotation matrix for full 3d 6-state state vector of
+        position and velocity.
 
         Returns
         -------
         :class:`numpy.ndarray` of shape (6, 6)
             The model (3D) rotation matrix.
         """
-        RR = block_diag(build_rotation_matrix(self.rotation_offset), build_rotation_matrix(self.rotation_offset))
+        RR = block_diag(build_rotation_matrix(self.rotation_offset),
+                        build_rotation_matrix(self.rotation_offset))
         A = np.array([[1, 0, 0, 0, 0, 0],
                       [0, 0, 0, 1, 0, 0],
                       [0, 1, 0, 0, 0, 0],
@@ -1210,9 +1212,9 @@ class CartesianRateToElevationRateBearingRateRangeRate(NonLinearGaussianMeasurem
         return new_state
 
     def jacobian(self, state, function=None, **kwargs):
-        """Model Jacobian matrix :math:`H_{jac}` using a given function. The aim of this updated version of the
-        function allows the use of defining either the function or the inverse_function when running the Jacobian
-        function.
+        """Model Jacobian matrix :math:`H_{jac}` using a given function. The aim of this updated
+        version of the :meth:`function` allows the use of defining either the function or the
+        :meth:`inverse_function` when running the Jacobian function.
 
         Parameters
         ----------

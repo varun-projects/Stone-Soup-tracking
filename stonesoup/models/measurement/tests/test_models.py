@@ -8,11 +8,13 @@ from scipy.stats import multivariate_normal
 from ..nonlinear import (
     CartesianToElevationBearingRange, CartesianToBearingRange,
     CartesianToElevationBearing, Cartesian2DToBearing, CartesianToBearingRangeRate,
-    CartesianToElevationBearingRangeRate, RangeRangeRateBinning, CartesianRateToElevationRateBearingRateRangeRate)
+    CartesianToElevationBearingRangeRate, RangeRangeRateBinning,
+    CartesianRateToElevationRateBearingRateRangeRate)
 
 from ...base import ReversibleModel
 from ...measurement.linear import LinearGaussian
-from ....functions import jacobian as compute_jac, sphererate2cartrate, cartrate2sphererate, build_rotation_matrix
+from ....functions import jacobian as compute_jac, sphererate2cartrate, cartrate2sphererate,\
+    build_rotation_matrix
 from ....functions import pol2cart
 from ....functions import rotz, rotx, roty, cart2sphere
 from ....types.angle import Bearing, Elevation
@@ -982,7 +984,8 @@ def test_compare_rrrb_to_ctebrr():
         ndim_state=6,
         mapping=[0, 2, 4],
         velocity_mapping=[1, 3, 5],
-        noise_covar=np.array([1., 1., 1., 1.]))
+        noise_covar=np.array([1., 1., 1., 1.])
+    )
 
     state = State([50.000005, 50.000005,
                    0., 0.,
