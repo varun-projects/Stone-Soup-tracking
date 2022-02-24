@@ -335,6 +335,43 @@ def cart2sphere(x, y, z):
     return (rho, phi, theta)
 
 
+def cartrate2sphererate(x, dx, y, dy, z, dz):
+    """Convert Cartesian coordinates to Spherical
+
+    Parameters
+    ----------
+    x: float
+        The x coordinate
+    dx: float
+        The velocity in x direction
+    y: float
+        The y coordinate
+    dy: float
+        The velocity in x direction
+    z: float
+        The z coordinate
+    dz: float
+        The velocity in z direction
+
+    Returns
+    -------
+    (float, float, float, float, float, float)
+        A tuple of the form `(elevation, elevationrate, bearing, bearingrate, range, rangerate)`
+        bearing (phi, dphi) and elevation (theta, dtheta) in radians. Elevation is measured from x, y plane
+
+    """
+
+    xyz = x ** 2 + y ** 2 + z ** 2
+    xy = x ** 2 + y ** 2
+    rho = np.sqrt(xyz)
+    phi = np.arctan2(y, x)
+    theta = np.arcsin(z / rho)
+    drho = (x * dx + y * dy + z * dz) / rho
+    dphi = (x * dy - y * dx) / xy
+    dtheta = (xy * dz - z * (x * dx + y * dy)) / (xyz * np.sqrt(xy))
+    return (theta, dtheta, phi, dphi, rho, drho)
+
+
 def cart2angles(x, y, z):
     """Convert Cartesian coordinates to Angles
 
