@@ -2,21 +2,22 @@
 import numpy as np
 import pytest
 from pytest import approx
+from scipy.linalg import block_diag
 from scipy.stats import multivariate_normal
 
 from ..nonlinear import (
     CartesianToElevationBearingRange, CartesianToBearingRange,
     CartesianToElevationBearing, Cartesian2DToBearing, CartesianToBearingRangeRate,
-    CartesianToElevationBearingRangeRate, RangeRangeRateBinning)
+    CartesianToElevationBearingRangeRate, RangeRangeRateBinning, CartesianRateToElevationRateBearingRateRangeRate)
 
 from ...base import ReversibleModel
 from ...measurement.linear import LinearGaussian
-from ....functions import jacobian as compute_jac
+from ....functions import jacobian as compute_jac, sphererate2cartrate, cartrate2sphererate, build_rotation_matrix
 from ....functions import pol2cart
 from ....functions import rotz, rotx, roty, cart2sphere
 from ....types.angle import Bearing, Elevation
 from ....types.array import StateVector, StateVectors
-from ....types.state import State, CovarianceMatrix
+from ....types.state import State, CovarianceMatrix, GaussianState
 from ....types.particle import Particles
 
 
@@ -1251,3 +1252,125 @@ def test_models_with_particles(h, ModelClass, state_vec, R,
              - h(single_state_vec, model.mapping, model.translation_offset, model.rotation_offset)
              ).T,
             cov=R)
+
+
+def test_jacobians():
+    cart_state = GaussianState(
+        state_vector=StateVector([[1], [0], [2], [0], [3], [0]]),
+        covar=np.diag([1, 1, 1, 1, 1, 1]))
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+            ndim_state=6,
+            mapping=(0, 1, 2, 3, 4, 5),
+            noise_covar=None
+        )
+    ebr_state = GaussianState(
+        state_vector=StateVector(
+            [[Bearing(1)], [0], [Elevation(2)], [0], [3], [0]]),
+        covar=np.diag([1, 1, 1, 1, 1, 1]))
+
+    H = compute_jac(model.function, cart_state)
+    assert np.array_equal(H, model.jacobian(cart_state))
+
+    # Check Jacobian has proper dimensions
+    assert H.shape == (model.ndim_meas, model.ndim_state)
+
+    H_inv = compute_jac(model.inverse_function, ebr_state)
+    assert np.array_equal(H_inv, model.jacobian(ebr_state, model.inverse_function))
+
+    # Check Jacobian has proper dimensions
+    assert H_inv.shape == (model.ndim_meas, model.ndim_state)
+
+    cart2ebr_state = model.cart2ebr(cart_state)
+    ebr2cart_state = model.ebr2cart(ebr_state)
+
+    theta, dtheta, phi, dphi, rho, drho = cartrate2sphererate(*cart_state.state_vector)
+    elevations = [Elevation(i) for i in np.atleast_1d(theta)]
+    bearings = [Bearing(i) for i in np.atleast_1d(phi)]
+    rhos = np.atleast_1d(rho)
+    drhos = np.atleast_1d(drho)
+    dbearings = np.atleast_1d(dphi)
+    delevations = np.atleast_1d(dtheta)
+
+    out_state = StateVectors([elevations, delevations,
+                              bearings, dbearings,
+                              rhos, drhos])
+
+    assert np.array_equal(out_state, cart2ebr_state.state_vector)
+    assert np.array_equal(H @ cart_state.covar @ H.T, cart2ebr_state.covar)
+
+    xyz = StateVector(sphererate2cartrate(*ebr_state.state_vector))
+    print(xyz, "\n", ebr2cart_state.state_vector)
+    # print(H_inv @ ebr_state.covar @ H_inv.T, "\n", ebr2cart_state.covar)
+    assert np.array_equal(xyz, ebr2cart_state.state_vector)
+    assert np.allclose(H_inv @ ebr_state.covar @ H_inv.T, ebr2cart_state.covar)
+
+
+def test_translations():
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        translation_offset=np.array([[10], [10], [0]]),
+        rotation_offset=np.array([[0], [0], [0]])
+    )
+    assert np.array_equal(model.translation_offset, np.array([[10], [0], [10], [0], [0], [0]]))
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        translation_offset=np.array([[10], [10]]),
+        rotation_offset=np.array([[0], [0], [0]])
+    )
+    assert np.array_equal(model.translation_offset, np.array([[10], [0], [10], [0], [0], [0]]))
+
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        rotation_offset=np.array([[0], [0], [0]])
+    )
+    assert np.array_equal(model.translation_offset, np.array([[0], [0], [0], [0], [0], [0]]))
+
+
+def test_ndim():
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        translation_offset=np.array([[10], [10], [0]]),
+        rotation_offset=np.array([[0], [0], [0]])
+    )
+    assert model.ndim_meas == 6
+
+
+def test_rotation_matrix():
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        translation_offset=np.array([[10], [10], [0]]),
+        rotation_offset=np.array([[0], [0], [0]])
+    )
+    AA = np.diag(np.ones(6))
+    assert np.array_equal(model._rotation_matrix, AA)
+
+    model = CartesianRateToElevationRateBearingRateRangeRate(
+        ndim_state=6,
+        mapping=(0, 1, 2, 3, 4, 5),
+        noise_covar=None,
+        translation_offset=np.array([[10], [10], [0]]),
+        rotation_offset=np.array([[np.radians(10)], [np.radians(10)], [np.radians(10)]])
+    )
+    A = np.array([[1, 0, 0, 0, 0, 0],
+                  [0, 0, 0, 1, 0, 0],
+                  [0, 1, 0, 0, 0, 0],
+                  [0, 0, 0, 0, 1, 0],
+                  [0, 0, 1, 0, 0, 0],
+                  [0, 0, 0, 0, 0, 1]])
+
+    rr = build_rotation_matrix(np.array(
+        [[np.radians(10)], [np.radians(10)], [np.radians(10)]]))
+
+    SS = block_diag(rr, rr)
+
+    assert np.array_equal(model._rotation_matrix, A @ SS @ A.T)
