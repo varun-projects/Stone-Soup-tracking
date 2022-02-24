@@ -271,14 +271,11 @@ def test_dotproduct(state_vector1, state_vector2):
 cart_vectors = [(1000.0, 10.0, 1000.0, 20.0, 8000.0, 0.0),  # test dtype=float
                 (1000, 10, 1000, 20, 8000, 0),  # test dtype=int
                 (0.1, 0.1, 0.1, 0.1, 0.1, 0.1),
-                (-1000.0, -10.0, -1000.0, -20.0, -8000.0, 10),
-                (0, 0, 0, 0, 0, 0)  # edge case
-                ]
+                (-1000.0, -10.0, -1000.0, -20.0, -8000.0, 10)]
 pol_vectors = [(1.3958, -0.0026, 0.7854, 0.0050, 8124.0384, 3.6927),
                (1.3958, -0.0026, 0.7854, 0.0050, 8124.0384, 3.6927),
                (0.6155, 0.0, 0.7854, 0.0, 0.1732, 0.1732),
-               (-1.3958, 0.0028, -2.3562, 0.0050, 8124.0384, -6.1546),
-               (0, 0, 0, 0, 0, 0)]
+               (-1.3958, 0.0028, -2.3562, 0.0050, 8124.0384, -6.1546)]
 
 
 @pytest.mark.parametrize(('cart_vector', 'pol_vector'),
@@ -293,3 +290,10 @@ def test_cartrate2sphererate(cart_vector, pol_vector):
 def test_sphererate2cartrate(cart_vector, pol_vector):
     eval_cart_vector = sphererate2cartrate(*pol_vector)
     assert np.allclose(eval_cart_vector, cart_vector, atol=1)
+
+
+def test_cart_pol_rate_vectorisation():
+    all_eval_pol = cartrate2sphererate(*np.array(cart_vectors).T)
+    assert np.allclose(all_eval_pol, np.array(pol_vectors).T, atol=1e-4)
+    all_eval_cart = sphererate2cartrate(*np.array(pol_vectors).T)
+    assert np.allclose(all_eval_cart, np.array(cart_vectors).T, atol=1)

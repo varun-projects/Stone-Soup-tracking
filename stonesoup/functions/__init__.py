@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Mathematical functions used within Stone Soup"""
 import copy
-import warnings
 
 import numpy as np
 
@@ -339,8 +338,6 @@ def cart2sphere(x, y, z):
 def cartrate2sphererate(x, dx, y, dy, z, dz):
     """Convert Cartesian coordinates to Spherical.
 
-    Raises warning when converting positional 0-vector.
-
     Parameters
     ----------
     x: float
@@ -362,12 +359,7 @@ def cartrate2sphererate(x, dx, y, dy, z, dz):
         A tuple of the form `(elevation, elevationrate, bearing, bearingrate, range, rangerate)`
         bearing (phi, dphi) and elevation (theta, dtheta) in radians. Elevation is measured from
         x, y plane.
-        If cartesian position is 0-vector, returns polar 0-vector (for position and velocity).
     """
-
-    if x == y == z == 0:
-        warnings.warn("Cartesian 0-vector converted to polar-rate vector")
-        return 0, 0, 0, 0, 0, 0
 
     xyz = x ** 2 + y ** 2 + z ** 2
     xy = x ** 2 + y ** 2
