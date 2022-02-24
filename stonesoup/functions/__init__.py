@@ -440,6 +440,40 @@ def sphere2cart(rho, phi, theta):
     return (x, y, z)
 
 
+def sphererate2cartrate(theta, dtheta, phi, dphi, rho, drho):
+    """Convert spherical coordinates to Cartesian
+
+    Parameters
+    ----------
+
+    theta: float, :class:`numpy.ndarray`
+        Elevation expressed in radians, measured from x, y plane
+    dtheta: float
+        Elevation rate, expressed in radians per second
+    phi: float, :class:`numpy.ndarray`
+        Bearing, expressed in radians
+    dphi: float
+        Bearing rate, expressed in radians per second
+    rho: float, :class:`numpy.ndarray`
+        Range(a.k.a. radial distance)
+    drho: float
+        Range rate
+
+    Returns
+    -------
+    (float, float, float, float, float, float)
+        A tuple of the form `(x, dx, y, dy, z, dz)`
+    """
+
+    x = rho*np.cos(phi)*np.cos(theta)
+    y = rho*np.sin(phi)*np.cos(theta)
+    z = rho*np.sin(theta)
+    dx = drho*np.cos(phi)*np.cos(theta) - rho*dphi*np.sin(phi)*np.cos(theta) - rho*dtheta*np.cos(phi)*np.sin(theta)
+    dy = drho*np.cos(phi)*np.cos(theta) + rho*dphi*np.cos(phi)*np.cos(theta) - rho*dtheta*np.sin(phi)*np.sin(theta)
+    dz = drho*np.sin(theta) + rho*dtheta*np.cos(theta)
+    return (x, dx, y, dy, z, dz)
+
+
 def rotx(theta):
     r"""Rotation matrix for rotations around x-axis
 
