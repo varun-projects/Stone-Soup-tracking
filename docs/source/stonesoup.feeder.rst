@@ -25,6 +25,12 @@ Multi
 .. automodule:: stonesoup.feeder.multi
     :show-inheritance:
 
+Simple
+------
+
+.. automodule:: stonesoup.feeder.simple
+    :show-inheritance:
+
 Time Based
 ----------
 

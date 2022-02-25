@@ -1,12 +1,15 @@
 from typing import Iterable
 
-from stonesoup.base import Property
-from stonesoup.buffered_generator import BufferedGenerator
-from stonesoup.feeder import Feeder
+from ..base import Property
+from ..buffered_generator import BufferedGenerator
+from ..feeder import Feeder
 
 
 class SimpleFeeder(Feeder):
+    """Simple data feeder
 
+    Creates a generator from an iterable.
+    """
     reader: Iterable = Property(doc="Source of states")
 
     @BufferedGenerator.generator_method
