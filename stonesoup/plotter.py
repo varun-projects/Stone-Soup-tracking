@@ -172,7 +172,7 @@ class Plotter:
         self.ax.legend(handles=self.handles_list, labels=self.labels_list)
 
     def plot_tracks(self, tracks, mapping, uncertainty=False, particle=False, track_label="Track",
-                    same_colour = False, **kwargs):
+                    same_colour=False, **kwargs):
         """Plots track(s)
 
         Plots each track generated, generating a legend automatically. If ``uncertainty=True``,
