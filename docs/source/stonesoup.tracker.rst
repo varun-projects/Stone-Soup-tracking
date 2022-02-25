@@ -15,3 +15,9 @@ Point Process
 
 .. automodule:: stonesoup.tracker.pointprocess
     :show-inheritance:
+
+Angle
+-----
+
+.. automodule:: stonesoup.tracker.angle
+    :show-inheritance:
